@@ -48,6 +48,7 @@ import {
   NeedsReplyNotice,
 } from './features/applications/NeedsReply.jsx';
 import { useGmailHourlySync } from './features/applications/useGmailHourlySync.js';
+import { WorkspaceStatusTags } from './features/applications/WorkspaceStatusTags.jsx';
 import {
   clearFocusCountdownSession,
   readFocusOnStart,
@@ -125,6 +126,7 @@ function App({
     interviewing: 0,
     rejected: 0,
     offer: 0,
+    inPipeline: 0,
   });
   const [jobStatsTick, setJobStatsTick] = useState(0);
 
@@ -192,6 +194,7 @@ function App({
         interviewing: 0,
         rejected: 0,
         offer: 0,
+        inPipeline: 0,
       });
       return;
     }
@@ -209,6 +212,7 @@ function App({
             interviewing: 0,
             rejected: 0,
             offer: 0,
+            inPipeline: 0,
           });
         }
       });
@@ -466,6 +470,10 @@ function App({
       return !classified.isClosed;
     }).length;
 
+    const habitsDoneToday = habits.filter((item) =>
+      isCellDone(item.row, selectedTargetDay),
+    ).length;
+
     return {
       totalCompleted,
       totalLeetcode,
@@ -474,6 +482,7 @@ function App({
       streak,
       taskCount: openTaskCount,
       habitCount,
+      habitsDoneToday,
       dailyBreakdown,
       maxDailyDone,
     };
@@ -702,6 +711,12 @@ function App({
                 </span>
               )}
 
+              <WorkspaceStatusTags
+                applicationsEnabled={applicationsEnabled}
+                userId={user?.id}
+                onOpenModules={() => setActiveTab('modules')}
+              />
+
               {/* MONTH & YEAR SELECTOR */}
               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 ml-1">
                 <button 
@@ -841,7 +856,7 @@ function App({
         </div>
 
         {/* METRIC KPI CARDS */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Completed</span>
@@ -855,6 +870,24 @@ function App({
             </div>
             <div className="mt-1 flex items-center gap-1 text-[11px] text-emerald-700 font-semibold">
               <TrendingUp className="w-3 h-3" /> {stats.avgDaily} avg / day
+            </div>
+          </div>
+
+          <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Completed Habits</span>
+              <div className="p-1.5 bg-teal-50 text-teal-600 rounded-lg">
+                <Flame className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2">
+              <span className="text-2xl font-extrabold text-slate-900">{stats.habitsDoneToday}</span>
+              <span className="text-xs text-slate-500 ml-1.5">
+                of {stats.habitCount} today
+              </span>
+            </div>
+            <div className="mt-1 text-[11px] text-teal-700 font-semibold flex items-center gap-1">
+              <Award className="w-3 h-3" /> streak {stats.streak}d
             </div>
           </div>
 
@@ -894,7 +927,7 @@ function App({
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Open Tasks</span>
               <div className="p-1.5 bg-purple-50 text-purple-600 rounded-lg">
-                <Flame className="w-4 h-4" />
+                <ListTodo className="w-4 h-4" />
               </div>
             </div>
             <div className="mt-2">
@@ -902,13 +935,30 @@ function App({
               <span className="text-xs text-slate-500 ml-1.5">to-dos</span>
             </div>
             <div className="mt-1 text-[11px] text-purple-700 font-semibold flex items-center gap-1">
-              <Award className="w-3 h-3" /> {stats.habitCount} habits · streak {stats.streak}d
+              <Award className="w-3 h-3" /> {stats.habitCount} habits tracked
             </div>
           </div>
         </div>
 
         {applicationsEnabled ? (
-          <div className="grid grid-cols-3 xl:grid-cols-6 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-7 gap-2">
+            <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 leading-tight">
+                  In pipeline
+                </span>
+                <div className="p-1 bg-emerald-50 text-emerald-700 rounded-md shrink-0">
+                  <Layers className="w-3.5 h-3.5" />
+                </div>
+              </div>
+              <div className="mt-1.5">
+                <span className="text-xl font-extrabold text-slate-900">
+                  {jobStats.inPipeline ?? 0}
+                </span>
+                <span className="text-[10px] text-slate-500 ml-1">active</span>
+              </div>
+            </div>
+
             <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
               <div className="flex items-center justify-between gap-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 leading-tight">

@@ -190,7 +190,7 @@ Deno.serve(async (req) => {
     const aiClient = await loadUserAiClient(admin, user.id)
 
     const q =
-      'newer_than:7d (label:job-tracker OR subject:(application OR interview OR invitation OR Invitation OR screening OR opportunity OR interested OR resume OR unfortunately OR "thank you for applying" OR "received your application" OR "looking forward" OR "please reply" OR "please confirm" OR RSVP OR offer))'
+      'newer_than:7d (label:job-tracker OR subject:(application OR interview OR invitation OR Invitation OR screening OR opportunity OR Opportunities OR interested OR resume OR recruiters OR unfortunately OR "thank you for applying" OR "received your application" OR "looking forward" OR "please reply" OR "please confirm" OR RSVP OR offer OR acknowledgement OR acknowledgment))'
     const listUrl = new URL(
       'https://gmail.googleapis.com/gmail/v1/users/me/messages',
     )

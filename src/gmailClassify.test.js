@@ -65,6 +65,17 @@ describe('gmailClassify', () => {
     assert.equal(r.kind, 'interview_event')
   })
 
+  it('Vistera subject-only (Opportunities with … - Vistera) → applied', () => {
+    const r = classifyJobEmail({
+      subject: 'Opportunities with IT/IQ Tech Recruiters - Vistera',
+      snippet: '',
+      from: "Eden O'Rourke <eden@itiq.com>",
+    })
+    assert.equal(r.kind, 'new_application')
+    assert.equal(r.proposed_status, 'applied')
+    assert.equal(r.proposed_company, 'Vistera')
+  })
+
   it('Vistera recruiter pipeline → applied with employer', () => {
     const r = classifyJobEmail({
       subject: 'Opportunities with IT/IQ Tech Recruiters - Vistera',
@@ -110,6 +121,19 @@ describe('gmailClassify', () => {
     })
     assert.equal(r.kind, 'interview_event')
     assert.equal(r.proposed_company, 'Covergenius')
+  })
+
+  it('CGI-style application acknowledgement → applied', () => {
+    const r = classifyJobEmail({
+      subject:
+        'Job Application Acknowledgement - Senior Full Stack Developer (Node.js / React / AWS), J0826-0345',
+      snippet:
+        'This message is confirming receipt of your resume for the job opportunity J0826-0345. CGI Recruitment Team.',
+      from: 'CGI <help.candidate@njoyn.com>',
+    })
+    assert.equal(r.kind, 'new_application')
+    assert.equal(r.proposed_status, 'applied')
+    assert.equal(r.proposed_company, 'CGI')
   })
 
   it('matchApplication finds exact company', () => {

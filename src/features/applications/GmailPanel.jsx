@@ -6,6 +6,7 @@ import {
   startGmailOAuth,
   syncGmail,
 } from '../../lib/gmail.js'
+import { withGmailSyncing } from '../../lib/gmailSyncUi.js'
 
 /**
  * Connect / sync Gmail. Sync auto-applies applications, rejections, interviews, needs-reply.
@@ -95,7 +96,7 @@ export function GmailPanel({ userId, enabled, onSynced }) {
     setError(null)
     setMessage(null)
     try {
-      const r = await syncGmail()
+      const r = await withGmailSyncing(() => syncGmail())
       const parts = [
         `Last 7 days · scanned ${r.scanned}`,
         `apps ${r.applications}`,

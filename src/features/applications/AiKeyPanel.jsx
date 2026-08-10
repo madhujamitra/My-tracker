@@ -56,6 +56,7 @@ export function AiKeyPanel({ enabled }) {
       setMessage(
         'API key saved. Next Sync will use AI when rules miss a message (max 15 AI calls/sync).',
       )
+      window.dispatchEvent(new Event('my-task:ai-key-changed'))
       await reload()
     } catch (err) {
       setError(err?.message || 'Could not save key')
@@ -73,6 +74,7 @@ export function AiKeyPanel({ enabled }) {
       await clearAiKey()
       setStatus({ enabled: false, key_hint: null })
       setMessage('API key removed. Sync will keep using rule-based classification.')
+      window.dispatchEvent(new Event('my-task:ai-key-changed'))
     } catch (err) {
       setError(err?.message || 'Could not clear key')
     } finally {

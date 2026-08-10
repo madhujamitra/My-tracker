@@ -105,12 +105,18 @@ export async function getJobDashboardStats(userId, staleDays = 20) {
 
   const byStatus = (status) => list.filter((a) => a.status === status).length
 
+  const interviewing = byStatus('interviewing')
+  const offer = byStatus('offer')
+  const applied = byStatus('applied')
+
   return {
     appliedToday,
     noUpdate,
     conversations,
-    interviewing: byStatus('interviewing'),
+    interviewing,
     rejected: byStatus('rejected'),
-    offer: byStatus('offer'),
+    offer,
+    /** Active pipeline: applied + interviewing + offer (excludes rejected / withdrawn / not_selected). */
+    inPipeline: applied + interviewing + offer,
   }
 }

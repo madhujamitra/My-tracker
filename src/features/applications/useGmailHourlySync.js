@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { getGmailStatus, syncGmail } from '../../lib/gmail.js'
+import { withGmailSyncing } from '../../lib/gmailSyncUi.js'
 
 const HOUR_MS = 60 * 60 * 1000
 
@@ -28,7 +29,7 @@ export function useGmailHourlySync({
         if (cancelled || !st?.connected) return
         const last = st.last_synced_at ? new Date(st.last_synced_at).getTime() : 0
         if (last && Date.now() - last < HOUR_MS - 30_000) return
-        await syncGmail()
+        await withGmailSyncing(() => syncGmail())
         if (!cancelled) onSyncedRef.current?.()
       } catch (err) {
         console.warn('[gmail auto-sync]', err?.message || err)

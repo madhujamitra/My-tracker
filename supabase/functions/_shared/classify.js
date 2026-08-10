@@ -13,10 +13,10 @@ const CALENDAR_INVITE_RE =
   /\b(invitation:|invitation from|updated invitation:|canceled event:|cancelled event:|calendar notification|you('ve| have) been invited|join (with )?google meet|zoom meeting invitation)\b/i
 
 const APPLIED_RE =
-  /\b(thank you for (applying|your application)|we (have )?received your application|application (was )?received|successfully applied|your application (for|to))\b/i
+  /\b(thank you for (applying|your application)|thanks for your interest|we (have )?received your (application|resume|cv|information)|application (was )?received|application (acknowledg?ement|confirmation)|job application acknowledg?ement|receipt of your (application|resume|cv)|resume received|cv received|(successfully )?(applied|submitted)|your application (for|to|is under review)|we will review your application|confirmation of (your )?application)\b/i
 
 const RECRUITER_PIPELINE_RE =
-  /\b(interested in (a )?(new )?opportunity|opportunity with|represent(ing)? (you|madhuja)|would like to represent|share (it )?with the .{0,40} team|submit(ting)? (your )?resume|resume will be submitted|thank you for sending over your resume|please (share|send|review).{0,60}(resume|availability|jd|job description)|if you are interested|updated copy of (the )?resume)\b/i
+  /\b(interested in (a )?(new )?opportunit(?:y|ies)|opportunit(?:y|ies) with|tech recruiters|represent(ing)? (you|madhuja)|would like to represent|share (it )?with the .{0,40} team|submit(ting)? (your )?resume|resume will be submitted|thank you for sending over your resume|please (share|send|review).{0,60}(resume|availability|jd|job description)|if you are interested|updated copy of (the )?resume)\b/i
 
 const WAITING_ON_ME_RE =
   /\b(if you are interested|please (share|send|review|reply|respond|confirm)|share an updated resume|availability for|looking forward to (your|hearing)|when (are you|would you be) available|kindly (reply|confirm)|awaiting your (reply|response)|get back to (us|me)|rsvp)\b/i
@@ -54,15 +54,37 @@ export function guessCompany(msg = {}) {
   const dashTail = subject.match(/\s[-–—]\s*([A-Z][A-Za-z0-9&.\- ]{1,40})\s*$/)
   if (dashTail) {
     const c = cleanCompany(dashTail[1])
-    if (c) return c
+    if (
+      c &&
+      !/\b(senior|junior|staff|lead|developer|engineer|architect|manager|full\s*stack|react|node)\b/i.test(
+        c,
+      )
+    ) {
+      return c
+    }
   }
 
   const oppWith = text.match(
-    /\b(?:opportunity with|role with|position (?:with|at)|Tech Lead opportunity with)\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,3})/,
+    /\b(?:opportunit(?:y|ies) with|role with|position (?:with|at)|Tech Lead opportunit(?:y|ies) with)\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,3})/,
   )
   if (oppWith) {
     const c = cleanCompany(oppWith[1])
     if (c) return c
+  }
+
+  const angle = from.match(/^([^<]+)</)
+  if (angle) {
+    let name = angle[1].trim().replace(/^"|"$/g, '')
+    name = name.replace(
+      /\s+(recruiting|careers|talent|jobs|noreply|no-reply|via greenhouse|via lever).*$/i,
+      '',
+    )
+    if (/^[A-Z][a-z]+\s+[A-Z][a-z]+/.test(name)) {
+      /* person name — skip */
+    } else if (name && !/@/.test(name) && name.length < 80) {
+      const c = cleanCompany(name)
+      if (c) return c
+    }
   }
 
   const domain = from.match(/@([a-z0-9.-]+)/i)
@@ -73,27 +95,11 @@ export function guessCompany(msg = {}) {
     const root = host.split('.')[0]
     if (
       root &&
-      !['gmail', 'googlemail', 'yahoo', 'outlook', 'hotmail', 'icloud'].includes(
+      !['gmail', 'googlemail', 'yahoo', 'outlook', 'hotmail', 'icloud', 'njoyn'].includes(
         root,
       )
     ) {
       return root.charAt(0).toUpperCase() + root.slice(1)
-    }
-  }
-
-  const angle = from.match(/^([^<]+)</)
-  if (angle) {
-    let name = angle[1].trim().replace(/^"|"$/g, '')
-    name = name.replace(
-      /\s+(recruiting|careers|talent|jobs|noreply|no-reply|via greenhouse|via lever).*$/i,
-      '',
-    )
-    // Skip likely person names (First Last)
-    if (/^[A-Z][a-z]+\s+[A-Z][a-z]+/.test(name)) {
-      /* prefer domain already tried */
-    } else if (name && !/@/.test(name) && name.length < 80) {
-      const c = cleanCompany(name)
-      if (c) return c
     }
   }
 
