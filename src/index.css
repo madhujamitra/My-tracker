@@ -1,0 +1,384 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+/* Ported from todo-app TimeControl */
+.time-control {
+  display: inline-flex;
+  align-items: stretch;
+  height: 28px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.time-control.is-running {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.time-control-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  border: 0;
+  border-right: 1px solid #e2e8f0;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  padding: 0;
+}
+
+.time-control.is-running .time-control-toggle {
+  border-right-color: #a7f3d0;
+  color: #059669;
+}
+
+.time-control-toggle:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.05);
+  color: #0f172a;
+}
+
+.time-control.is-running .time-control-toggle:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+}
+
+.time-control-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.time-control-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 6px;
+  min-width: 52px;
+}
+
+.time-control-input {
+  width: 36px;
+  min-height: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: #0f172a;
+  outline: none;
+}
+
+.time-control-live {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #059669;
+  min-width: 48px;
+  text-align: right;
+}
+
+.time-control-unit {
+  font-size: 11px;
+  font-weight: 650;
+  color: #64748b;
+}
+
+.time-control.is-compact {
+  height: 24px;
+}
+
+.time-control.is-compact .time-control-toggle {
+  width: 24px;
+}
+
+.time-control.is-readonly {
+  border-style: dashed;
+  background: #f8fafc;
+}
+
+.time-control.is-readonly .time-control-live {
+  padding-left: 8px;
+}
+
+/* Focus Mode — adapted from todo-app */
+.focus-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.focus-mode.is-flash {
+  animation: focus-flash 0.9s ease-out 2;
+}
+
+@keyframes focus-flash {
+  0%,
+  100% {
+    background: #f8fafc;
+  }
+  50% {
+    background: #eef2ff;
+  }
+}
+
+.focus-mode-inner {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+}
+
+.focus-mode-session {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 28px 32px;
+  overflow: auto;
+}
+
+.focus-mode-top {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.focus-mode-title {
+  margin: 0;
+  font-size: clamp(1.4rem, 2.6vw, 2rem);
+  font-weight: 700;
+  line-height: 1.25;
+  color: #0f172a;
+}
+
+.focus-mode-status {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px 20px;
+  align-items: end;
+}
+
+.focus-mode-clock-label {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.focus-mode-worked-value {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: #059669;
+}
+
+.focus-mode-countdown-value {
+  font-size: clamp(1.2rem, 3vw, 1.6rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: #0f172a;
+}
+
+.focus-mode.is-ended .focus-mode-countdown-value {
+  color: #94a3b8;
+}
+
+.focus-mode-duration {
+  position: relative;
+  justify-self: end;
+  align-self: end;
+}
+
+.focus-mode-duration-toggle {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.focus-mode-duration-toggle.is-open,
+.focus-mode-duration-toggle:hover {
+  background: #f1f5f9;
+}
+
+.focus-mode-duration-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.focus-mode-chip {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.focus-mode-chip.is-active {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.focus-mode-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.focus-mode-custom-input {
+  width: 88px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.focus-mode-ended-banner {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.focus-mode-ended-banner p {
+  margin: 4px 0 0;
+  color: #a16207;
+}
+
+.focus-mode-spacer {
+  flex: 1;
+}
+
+.focus-mode-bottom {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+.focus-mode-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.focus-mode-btn {
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.focus-mode-btn-stop {
+  background: #334155;
+  color: #fff;
+}
+
+.focus-mode-btn-stop:hover {
+  background: #1e293b;
+}
+
+.focus-mode-btn-leave {
+  background: #fff;
+  border-color: #e2e8f0;
+  color: #0f172a;
+}
+
+.focus-mode-btn-leave:hover {
+  background: #f8fafc;
+}
+
+.focus-mode-footer {
+  display: flex;
+}
+
+.focus-mode-link {
+  border: 0;
+  background: transparent;
+  color: #6366f1;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.focus-mode-link:hover {
+  text-decoration: underline;
+}
+
+.focus-mode-smile-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+@media (max-width: 640px) {
+  .focus-mode-session {
+    padding: 20px 16px;
+  }
+
+  .focus-mode-status {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .focus-mode-duration {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
