@@ -78,7 +78,7 @@ function App({
   const [signingOut, setSigningOut] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('todo'); // 'todo' | 'grid' | 'analytics' | 'timer'
+  const [activeTab, setActiveTab] = useState('todo'); // 'todo' | 'completed' | 'grid' | 'analytics' | 'timer'
   const [todoPriorityFilter, setTodoPriorityFilter] = useState('all'); // 'all' | 'High' | 'Medium' | 'Normal'
   const [todoTypeFilter, setTodoTypeFilter] = useState('all'); // Both: tasks + habits
   
@@ -137,9 +137,9 @@ function App({
     setSelectedYear(d.getFullYear());
   };
 
-  // To-do queue is always anchored to the real calendar today
+  // To-do / completed views stay on the real calendar today
   useEffect(() => {
-    if (activeTab === 'todo') {
+    if (activeTab === 'todo' || activeTab === 'completed') {
       goToToday();
     }
   }, [activeTab]);
@@ -397,6 +397,40 @@ function App({
     list.sort(sortQueueItems);
     return list;
   }, [parsed.taskRows, selectedTargetDay, todoPriorityFilter, todoTypeFilter, searchQuery, taskMetaMap]);
+
+  // Completed tasks only (past + today) — derived from sheet cells, no extra DB table
+  const completedTasks = useMemo(() => {
+    const list = [];
+    const refDay = selectedTargetDay;
+
+    parsed.taskRows.forEach((item) => {
+      const title = String(item.row?.[0] || 'Untitled').trim();
+      const meta = getTaskMeta(item);
+      if (meta.itemType !== 'todo') return;
+
+      const classified = classifyItem({
+        row: item.row,
+        itemType: 'todo',
+        createdDay: meta.createdDay,
+        refDay,
+      });
+
+      if (!classified.isClosed || !classified.completedOn) return;
+      if (searchQuery && !title.toLowerCase().includes(searchQuery.toLowerCase())) return;
+      if (todoPriorityFilter !== 'all' && meta.priority.toLowerCase() !== todoPriorityFilter.toLowerCase()) return;
+
+      list.push({
+        item,
+        title,
+        priority: meta.priority,
+        completedOn: classified.completedOn,
+        isDoneToday: classified.completedOn === refDay,
+      });
+    });
+
+    list.sort((a, b) => b.completedOn - a.completedOn);
+    return list;
+  }, [parsed.taskRows, selectedTargetDay, searchQuery, todoPriorityFilter, taskMetaMap]);
 
   const focusItem = focusItemId
     ? parsed.taskRows.find((item) => String(item.index_) === String(focusItemId))
@@ -738,6 +772,17 @@ function App({
               To-Do & Rollover Queue
             </button>
             <button
+              onClick={() => setActiveTab('completed')}
+              className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                activeTab === 'completed' 
+                  ? 'bg-white text-indigo-700 shadow-sm' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+              Completed Tasks
+            </button>
+            <button
               onClick={() => setActiveTab('grid')}
               className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'grid' 
@@ -895,14 +940,17 @@ function App({
                       </td>
                     </tr>
                   ) : (
-                    queueTasks.map(({ item, title, priority, itemType, isDoneToday, isRolledOver, missedDay, refDay, statusLabel }) => {
+                    queueTasks.map(({ item, title, priority, itemType, isDoneToday, isRolledOver, missedDay, refDay, statusLabel, isClosed }) => {
                       const timerRunning = timers.isRunning(item.index_);
+                      const taskCompleted = itemType === 'todo' && (isDoneToday || isClosed);
                       const rowBg = timerRunning
                         ? 'bg-emerald-50/80 border-l-4 border-l-emerald-500'
+                        : taskCompleted
+                        ? 'bg-slate-200/90 text-slate-600 border-l-4 border-l-slate-500'
                         : isRolledOver
                         ? 'bg-amber-50/90 hover:bg-amber-100/70 border-l-4 border-l-amber-500'
                         : isDoneToday
-                        ? 'bg-slate-50/60 opacity-60'
+                        ? 'bg-slate-100/80'
                         : 'hover:bg-slate-50/80';
 
                       return (
@@ -913,7 +961,7 @@ function App({
                               onClick={() => handleToggleCell(item.index_, refDay)}
                               className={`w-4 h-4 rounded border inline-flex items-center justify-center transition ${
                                 isDoneToday
-                                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                                  ? 'bg-slate-700 border-slate-700 text-white'
                                   : 'border-slate-300 bg-white hover:border-indigo-500'
                               }`}
                             >
@@ -923,7 +971,7 @@ function App({
 
                           {/* Task Title */}
                           <td className="p-2.5 font-semibold text-slate-800 truncate max-w-xs">
-                            <span className={isDoneToday ? 'line-through text-slate-500 font-medium' : ''}>
+                            <span className={taskCompleted || isDoneToday ? 'line-through text-slate-600 font-medium' : ''}>
                               {title}
                             </span>
                           </td>
@@ -1027,6 +1075,92 @@ function App({
                         </tr>
                       );
                     })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: COMPLETED TASKS (tasks only, past + today) */}
+        {activeTab === 'completed' && (
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex flex-wrap items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-slate-600" />
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Completed Tasks</h2>
+                  <p className="text-[11px] text-slate-500">
+                    Tasks you finished this month (habits stay on the daily list).
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                {completedTasks.length} completed
+              </span>
+            </div>
+
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-left border-collapse text-xs min-w-[560px]">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
+                    <th className="p-2.5">Task Title</th>
+                    <th className="p-2.5 w-28">Priority</th>
+                    <th className="p-2.5 w-40">Completed on</th>
+                    <th className="p-2.5 w-28 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {completedTasks.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-slate-400 italic">
+                        No completed tasks yet this month. Finish a task from the To-Do queue to see it here.
+                      </td>
+                    </tr>
+                  ) : (
+                    completedTasks.map(({ item, title, priority, completedOn, isDoneToday }) => (
+                      <tr
+                        key={item.index_}
+                        className="bg-slate-200/90 text-slate-600 border-l-4 border-l-slate-500"
+                      >
+                        <td className="p-2.5 font-semibold truncate max-w-xs">
+                          <span className="line-through text-slate-600">{title}</span>
+                          {isDoneToday ? (
+                            <span className="ml-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                              Today
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="p-2.5">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              priority === 'High'
+                                ? 'bg-rose-100 text-rose-700'
+                                : priority === 'Medium'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {priority}
+                          </span>
+                        </td>
+                        <td className="p-2.5 whitespace-nowrap font-semibold text-slate-700">
+                          <span className="inline-flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
+                            {currentMonth.name.slice(0, 3)} {completedOn}, {selectedYear}
+                          </span>
+                        </td>
+                        <td className="p-2.5 text-center">
+                          <button
+                            onClick={() => deleteItem && deleteItem(item.index_)}
+                            className="p-1 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                            title="Delete task"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>

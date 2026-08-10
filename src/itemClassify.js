@@ -21,6 +21,7 @@ export function classifyItem({ row, itemType = 'todo', createdDay = 1, refDay })
       isDoneToday: doneToday,
       isRolledOver: false,
       missedDay: null,
+      completedOn: doneToday ? day : null,
       isClosed: false,
       includeInQueue: true,
       statusLabel: doneToday ? 'completed' : 'due_today',
@@ -42,6 +43,7 @@ export function classifyItem({ row, itemType = 'todo', createdDay = 1, refDay })
       isDoneToday: completedOn === day,
       isRolledOver: false,
       missedDay: null,
+      completedOn,
       isClosed: true,
       // Keep on today's list only if finished today; older completions drop off
       includeInQueue: completedOn === day,
@@ -55,6 +57,7 @@ export function classifyItem({ row, itemType = 'todo', createdDay = 1, refDay })
     isDoneToday: false,
     isRolledOver,
     missedDay: isRolledOver ? startDay : null,
+    completedOn: null,
     isClosed: false,
     includeInQueue: true,
     statusLabel: isRolledOver ? 'missed' : 'due_today',

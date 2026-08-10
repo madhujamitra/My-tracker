@@ -70,6 +70,7 @@ function rowWith(...doneDays) {
     refDay: 10,
   })
   assert.equal(r.isClosed, true)
+  assert.equal(r.completedOn, 9)
   assert.equal(r.includeInQueue, false)
   assert.equal(r.statusLabel, 'completed')
 }
