@@ -22,6 +22,8 @@ import {
 } from '../../lib/applications.js'
 import { getWorkspace, patchWorkspace } from '../../lib/modules.js'
 import { GmailPanel } from './GmailPanel.jsx'
+import { TabArrangePanel } from './TabArrangePanel.jsx'
+import { AiKeyPanel } from './AiKeyPanel.jsx'
 
 const STATUS_STYLES = {
   applied: 'bg-sky-50 text-sky-800 border-sky-200',
@@ -216,9 +218,11 @@ export function ApplicationsPage({
       <div>
         <h2 className="text-base font-bold text-slate-900">Modules</h2>
         <p className="text-xs text-slate-500 mt-0.5">
-          Turn features on only when you need them. Core tasks & habits stay available.
+          Turn features on and choose which dashboard tables show.
         </p>
       </div>
+
+      <TabArrangePanel taskMetaMap={taskMetaMap} setTaskMetaMap={setTaskMetaMap} />
 
       <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/80">
         <input
@@ -267,6 +271,8 @@ export function ApplicationsPage({
         enabled={Boolean(workspace.modules.applications)}
         onSynced={() => void reload()}
       />
+
+      <AiKeyPanel enabled={Boolean(workspace.modules.applications)} />
     </div>
   )
 
@@ -459,8 +465,6 @@ export function ApplicationsPage({
           </table>
         </div>
       </div>
-
-      {modulesPanel}
 
       {/* App modal */}
       {appModal ? (

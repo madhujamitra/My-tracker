@@ -96,9 +96,25 @@ export function GmailPanel({ userId, enabled, onSynced }) {
     setMessage(null)
     try {
       const r = await syncGmail()
-      setMessage(
-        `Last 7 days · scanned ${r.scanned} · apps ${r.applications} · rejected ${r.rejected} · interviews ${r.interviews} · needs reply ${r.needs_reply} · skipped ${r.skipped}`,
-      )
+      const parts = [
+        `Last 7 days · scanned ${r.scanned}`,
+        `apps ${r.applications}`,
+        `rejected ${r.rejected}`,
+        `offers ${r.offers ?? 0}`,
+        `interviews ${r.interviews}`,
+        `needs reply ${r.needs_reply}`,
+        `skipped ${r.skipped}`,
+      ]
+      if (r.ai_enabled) {
+        parts.push(
+          `AI ${r.ai_hits ?? 0}/${r.ai_calls ?? 0} hits` +
+            (r.ai_errors ? ` · ${r.ai_errors} AI errors (rules used)` : ''),
+        )
+      }
+      if (r.dates_corrected) {
+        parts.push(`dates fixed ${r.dates_corrected}`)
+      }
+      setMessage(parts.join(' · '))
       await reload()
       onSynced?.()
     } catch (err) {
@@ -126,10 +142,11 @@ export function GmailPanel({ userId, enabled, onSynced }) {
           <Mail className="w-4 h-4 text-indigo-600" /> Google sync
         </p>
         <p className="text-xs text-slate-500 mt-0.5">
-          Sync last <strong>7 days</strong>: new apps, rejections, calendar/interview invites, and
-          “needs reply” mail apply automatically. While you’re logged in, sync also runs about{' '}
-          <strong>every hour</strong> (and when you return to this tab). You can still Sync now
-          anytime. Reconnect if you connected before Calendar was added.
+          Sync last <strong>7 days</strong>: new apps, rejections, offers, calendar/interview
+          invites, and “needs reply” apply automatically. With an AI key in Modules, ambiguous
+          mail can be classified by your LLM (rules still run first). While logged in, sync also
+          runs about <strong>every hour</strong>. Reconnect if you connected before Calendar was
+          added.
         </p>
       </div>
 

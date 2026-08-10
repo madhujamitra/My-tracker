@@ -5,6 +5,19 @@ import {
   refreshAccessToken,
 } from '../_shared/google.js'
 import { classifyJobEmail, matchApplication } from '../_shared/classify.js'
+import {
+  loadUserAiClient,
+  classifyWithLlm,
+} from '../_shared/llmClassify.js'
+import {
+  emailDateToIsoDate,
+  earlierIsoDate,
+  internalDateToIsoDate,
+  parseInviteStartsAt,
+} from '../_shared/emailDate.js'
+
+/** Cap LLM calls per sync — cost + latency bound. */
+const MAX_AI_CALLS = 15
 
 function headerValue(headers, name) {
   const h = (headers || []).find(
@@ -47,29 +60,41 @@ async function markProcessed(admin, row) {
   )
 }
 
-async function ensureApplication(admin, userId, apps, company, status, notes) {
+/**
+ * Create or update application.
+ * applied_at = email arrival day; on match, only move earlier (never later).
+ */
+async function ensureApplication(
+  admin,
+  userId,
+  apps,
+  company,
+  status,
+  notes,
+  appliedAt,
+) {
   const name = company || 'Unknown company'
   const matched = matchApplication(apps, name)
   const now = new Date().toISOString()
   if (matched) {
-    if (status && matched.status !== status) {
-      await admin
-        .from('applications')
-        .update({
-          status,
-          last_activity_at: now,
-          updated_at: now,
-        })
-        .eq('user_id', userId)
-        .eq('id', matched.id)
-      matched.status = status
-    } else {
-      await admin
-        .from('applications')
-        .update({ last_activity_at: now, updated_at: now })
-        .eq('user_id', userId)
-        .eq('id', matched.id)
+    const nextApplied = earlierIsoDate(matched.applied_at, appliedAt)
+    const patch = {
+      last_activity_at: now,
+      updated_at: now,
     }
+    if (status && matched.status !== status) {
+      patch.status = status
+      matched.status = status
+    }
+    if (nextApplied && nextApplied !== matched.applied_at) {
+      patch.applied_at = nextApplied
+      matched.applied_at = nextApplied
+    }
+    await admin
+      .from('applications')
+      .update(patch)
+      .eq('user_id', userId)
+      .eq('id', matched.id)
     return matched
   }
   const { data, error } = await admin
@@ -78,16 +103,70 @@ async function ensureApplication(admin, userId, apps, company, status, notes) {
       user_id: userId,
       company: name,
       status: status || 'applied',
-      applied_at: now.slice(0, 10),
+      applied_at: appliedAt || now.slice(0, 10),
       last_activity_at: now,
       notes: notes || null,
       updated_at: now,
     })
-    .select('id, company, status')
+    .select('id, company, status, applied_at')
     .single()
   if (error) throw error
   apps.push(data)
   return data
+}
+
+/** Fix applied_at on an existing app id (re-sync / already-processed mail). */
+async function backfillAppliedAt(admin, userId, appId, appliedAt, apps) {
+  if (!appId || !appliedAt) return false
+  const row = apps.find((a) => a.id === appId)
+  const current = row?.applied_at
+  const next = earlierIsoDate(current, appliedAt)
+  if (!next || next === current) {
+    // Still fetch if not in memory
+    if (row) return false
+  }
+  const { data: existing } = await admin
+    .from('applications')
+    .select('id, company, status, applied_at')
+    .eq('user_id', userId)
+    .eq('id', appId)
+    .maybeSingle()
+  if (!existing) return false
+  const corrected = earlierIsoDate(existing.applied_at, appliedAt)
+  if (!corrected || corrected === existing.applied_at) return false
+  await admin
+    .from('applications')
+    .update({
+      applied_at: corrected,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .eq('id', appId)
+  existing.applied_at = corrected
+  const mem = apps.find((a) => a.id === appId)
+  if (mem) mem.applied_at = corrected
+  else apps.push(existing)
+  return true
+}
+
+async function upsertNeedsReply(admin, userId, mId, subject, snippet, from, dateHdr) {
+  let receivedAt = null
+  if (dateHdr) {
+    const d = new Date(dateHdr)
+    if (!Number.isNaN(d.getTime())) receivedAt = d.toISOString()
+  }
+  await admin.from('mail_needs_reply').upsert(
+    {
+      user_id: userId,
+      gmail_message_id: mId,
+      subject,
+      snippet,
+      from_email: from,
+      received_at: receivedAt,
+      status: 'open',
+    },
+    { onConflict: 'user_id,gmail_message_id' },
+  )
 }
 
 Deno.serve(async (req) => {
@@ -108,10 +187,10 @@ Deno.serve(async (req) => {
     if (!conn) throw new Error('Gmail not connected')
 
     const accessToken = await ensureAccessToken(admin, conn)
+    const aiClient = await loadUserAiClient(admin, user.id)
 
-    // Last 7 days — job signals + needs-reply cues
     const q =
-      'newer_than:7d (label:job-tracker OR subject:(application OR interview OR invitation OR unfortunately OR "thank you for applying" OR "received your application" OR "looking forward" OR "please reply" OR "please confirm" OR RSVP))'
+      'newer_than:7d (label:job-tracker OR subject:(application OR interview OR invitation OR Invitation OR screening OR opportunity OR interested OR resume OR unfortunately OR "thank you for applying" OR "received your application" OR "looking forward" OR "please reply" OR "please confirm" OR RSVP OR offer))'
     const listUrl = new URL(
       'https://gmail.googleapis.com/gmail/v1/users/me/messages',
     )
@@ -129,7 +208,7 @@ Deno.serve(async (req) => {
     const messages = listJson.messages || []
     const { data: appsData } = await admin
       .from('applications')
-      .select('id, company, status')
+      .select('id, company, status, applied_at')
       .eq('user_id', user.id)
     const apps = appsData || []
 
@@ -137,10 +216,18 @@ Deno.serve(async (req) => {
       scanned: messages.length,
       applications: 0,
       rejected: 0,
+      offers: 0,
       interviews: 0,
       needs_reply: 0,
       skipped: 0,
+      dates_corrected: 0,
+      ai_enabled: Boolean(aiClient),
+      ai_calls: 0,
+      ai_hits: 0,
+      ai_errors: 0,
     }
+
+    let aiDisabledForRun = false
 
     for (const m of messages) {
       const msgRes = await fetch(
@@ -158,7 +245,36 @@ Deno.serve(async (req) => {
       const from = headerValue(headers, 'From')
       const dateHdr = headerValue(headers, 'Date')
       const snippet = msg.snippet || ''
-      const classified = classifyJobEmail({ subject, snippet, from })
+      const mail = { subject, snippet, from }
+      const appliedAt = dateHdr
+        ? emailDateToIsoDate(dateHdr)
+        : internalDateToIsoDate(msg.internalDate)
+
+      let classified = classifyJobEmail(mail)
+
+      if (
+        !classified &&
+        aiClient &&
+        !aiDisabledForRun &&
+        summary.ai_calls < MAX_AI_CALLS
+      ) {
+        summary.ai_calls += 1
+        try {
+          classified = await classifyWithLlm(mail, aiClient)
+          if (classified) summary.ai_hits += 1
+        } catch (llmErr) {
+          summary.ai_errors += 1
+          console.error('LLM classify failed', llmErr)
+          if (
+            llmErr?.status === 401 ||
+            llmErr?.status === 403 ||
+            llmErr?.status === 429
+          ) {
+            aiDisabledForRun = true
+          }
+        }
+      }
+
       if (!classified) {
         summary.skipped += 1
         continue
@@ -166,12 +282,40 @@ Deno.serve(async (req) => {
 
       const { data: existing } = await admin
         .from('gmail_proposals')
-        .select('id, status')
+        .select('id, status, application_id, proposed_company, kind')
         .eq('user_id', user.id)
         .eq('gmail_message_id', m.id)
         .eq('kind', classified.kind)
         .maybeSingle()
-      if (existing && (existing.status === 'applied' || existing.status === 'accepted')) {
+      if (
+        existing &&
+        (existing.status === 'applied' || existing.status === 'accepted')
+      ) {
+        // Already applied — still fix wrong sync-day applied_at from this email
+        let appId = existing.application_id
+        if (!appId && existing.proposed_company) {
+          const hit = matchApplication(apps, existing.proposed_company)
+          appId = hit?.id || null
+        }
+        if (!appId && classified.proposed_company) {
+          const hit = matchApplication(apps, classified.proposed_company)
+          appId = hit?.id || null
+        }
+        if (
+          appId &&
+          ['new_application', 'status_update', 'interview_event'].includes(
+            classified.kind,
+          )
+        ) {
+          const fixed = await backfillAppliedAt(
+            admin,
+            user.id,
+            appId,
+            appliedAt,
+            apps,
+          )
+          if (fixed) summary.dates_corrected += 1
+        }
         summary.skipped += 1
         continue
       }
@@ -201,23 +345,40 @@ Deno.serve(async (req) => {
             company,
             'applied',
             `From Gmail: ${subject}`,
+            appliedAt,
           )
           audit.application_id = app.id
+          if (classified.awaiting_candidate_reply) {
+            await upsertNeedsReply(
+              admin,
+              user.id,
+              m.id,
+              subject,
+              snippet,
+              from,
+              dateHdr,
+            )
+            summary.needs_reply += 1
+          }
           await markProcessed(admin, audit)
           summary.applications += 1
         } else if (classified.kind === 'status_update') {
+          const status = classified.proposed_status || 'rejected'
           const app = await ensureApplication(
             admin,
             user.id,
             apps,
             company,
-            classified.proposed_status || 'rejected',
+            status,
             `From Gmail: ${subject}`,
+            appliedAt,
           )
           audit.application_id = app.id
           await markProcessed(admin, audit)
-          if ((classified.proposed_status || 'rejected') === 'rejected') {
+          if (status === 'rejected' || status === 'not_selected') {
             summary.rejected += 1
+          } else if (status === 'offer') {
+            summary.offers += 1
           } else {
             summary.applications += 1
           }
@@ -229,9 +390,10 @@ Deno.serve(async (req) => {
             company,
             'interviewing',
             `From Gmail: ${subject}`,
+            appliedAt,
           )
-          const starts = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-          // Avoid duplicate events for same gmail message title+app in last week
+          const starts = parseInviteStartsAt({ subject, snippet })
+          audit.proposed_starts_at = starts
           const { data: existingEv } = await admin
             .from('interview_events')
             .select('id')
@@ -253,22 +415,14 @@ Deno.serve(async (req) => {
           await markProcessed(admin, audit)
           summary.interviews += 1
         } else if (classified.kind === 'needs_reply') {
-          let receivedAt = null
-          if (dateHdr) {
-            const d = new Date(dateHdr)
-            if (!Number.isNaN(d.getTime())) receivedAt = d.toISOString()
-          }
-          await admin.from('mail_needs_reply').upsert(
-            {
-              user_id: user.id,
-              gmail_message_id: m.id,
-              subject,
-              snippet,
-              from_email: from,
-              received_at: receivedAt,
-              status: 'open',
-            },
-            { onConflict: 'user_id,gmail_message_id' },
+          await upsertNeedsReply(
+            admin,
+            user.id,
+            m.id,
+            subject,
+            snippet,
+            from,
+            dateHdr,
           )
           await markProcessed(admin, audit)
           summary.needs_reply += 1

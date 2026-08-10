@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "test": "node --test src/itemClassify.test.js src/date.test.js src/focus-countdown.test.js src/staleApplications.test.js src/gmailClassify.test.js",
+    "test": "node --test src/itemClassify.test.js src/date.test.js src/focus-countdown.test.js src/staleApplications.test.js src/gmailClassify.test.js src/dashboardTabs.test.js src/aiCrypto.test.js src/llmClassifyParse.test.js src/aiPrivacy.test.js src/emailDate.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

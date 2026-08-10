@@ -1,5 +1,7 @@
 /** Workspace prefs stored under app_state.meta.__workspace */
 
+import { normalizeTabsPrefs } from './dashboardTabs.js'
+
 export const WORKSPACE_KEY = '__workspace'
 
 export const DEFAULT_WORKSPACE = {
@@ -7,12 +9,17 @@ export const DEFAULT_WORKSPACE = {
     applications: false,
   },
   applicationsStaleDays: 20,
+  tabs: normalizeTabsPrefs({}),
 }
 
 export function getWorkspace(meta = {}) {
   const raw = meta?.[WORKSPACE_KEY]
   if (!raw || typeof raw !== 'object') {
-    return { ...DEFAULT_WORKSPACE, modules: { ...DEFAULT_WORKSPACE.modules } }
+    return {
+      ...DEFAULT_WORKSPACE,
+      modules: { ...DEFAULT_WORKSPACE.modules },
+      tabs: normalizeTabsPrefs({}),
+    }
   }
   return {
     modules: {
@@ -23,6 +30,7 @@ export function getWorkspace(meta = {}) {
       typeof raw.applicationsStaleDays === 'number' && raw.applicationsStaleDays > 0
         ? raw.applicationsStaleDays
         : DEFAULT_WORKSPACE.applicationsStaleDays,
+    tabs: normalizeTabsPrefs(raw.tabs),
   }
 }
 
@@ -46,6 +54,18 @@ export function patchWorkspace(setMeta, patch) {
         patch.applicationsStaleDays !== undefined
           ? patch.applicationsStaleDays
           : current.applicationsStaleDays,
+      tabs:
+        patch.tabs !== undefined
+          ? normalizeTabsPrefs({
+              ...current.tabs,
+              ...patch.tabs,
+              visible: {
+                ...current.tabs.visible,
+                ...(patch.tabs.visible || {}),
+              },
+              order: patch.tabs.order || current.tabs.order,
+            })
+          : current.tabs,
     }
     return {
       ...prev,

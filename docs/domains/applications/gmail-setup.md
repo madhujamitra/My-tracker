@@ -37,13 +37,15 @@ Re-run [`supabase/schema.sql`](../../supabase/schema.sql) so `gmail_connections`
 ## Edge Function secrets
 
 ```bash
-# From my-task/ with Supabase CLI logged in and linked
 supabase secrets set \
   GOOGLE_CLIENT_ID="..." \
   GOOGLE_CLIENT_SECRET="..." \
   APP_URL="http://localhost:5173" \
-  GMAIL_OAUTH_STATE_SECRET="long-random-string"
+  GMAIL_OAUTH_STATE_SECRET="long-random-string" \
+  AI_KEY_ENCRYPTION_SECRET="another-long-random-string-16+"
 ```
+
+`AI_KEY_ENCRYPTION_SECRET` encrypts each user’s BYOK LLM key (Modules → AI email analysis). Never put user API keys in Vite env.
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are provided automatically to functions.
 
@@ -58,9 +60,16 @@ supabase functions deploy gmail-status
 supabase functions deploy gmail-disconnect
 supabase functions deploy gmail-sync
 supabase functions deploy google-calendar-list
+supabase functions deploy ai-key-save
+supabase functions deploy ai-key-clear
+supabase functions deploy ai-key-status
 ```
 
 After pulling auto-apply changes: **Disconnect** then **Connect Google** again so Calendar scope is granted. Sync applies the last **7 days** automatically (no Accept/Dismiss).
+
+**BYOK AI (Phase 2):** With a key saved in Modules and `AI_KEY_ENCRYPTION_SECRET` set, redeploy **`gmail-sync`**. Sync runs heuristics first; on miss it calls the user’s LLM (max 15/sync). 401/403/429 → rest of that sync uses rules only.
+
+**Applied signals:** `applied_at` comes from the email Date header (not sync day). Recruiter pipelines count as `applied`; waiting-on-you also opens needs-reply. Screening invites parse start time when present. Redeploy `gmail-sync` after pulling these changes.
 
 Entrypoints are `supabase/functions/<name>/index.ts`. Docker is optional for remote deploy; the “Docker is not running” warning is usually fine.
 
@@ -69,12 +78,13 @@ Entrypoints are `supabase/functions/<name>/index.ts`. Docker is optional for rem
 ## App usage
 
 1. Enable **Applications** under Modules.  
-2. **Connect Gmail** → Google consent → redirect back with `?gmail=connected`.  
-3. **Sync now** → review **Pending proposals** → Accept / Dismiss.  
-4. Optional: in Gmail, create label `job-tracker` and apply it to job mail (sync prefers that label).
+2. **Connect Google** → consent → redirect with `?gmail=connected`.  
+3. Optional: paste LLM API key under **AI email analysis**.  
+4. **Sync now** → auto-applies last 7 days (apps / reject / offer / interview / needs-reply).  
+5. Optional: Gmail label `job-tracker` on job mail.
 
 ## Security notes
 
-- Scope is **gmail.readonly** only (no send).  
-- Refresh tokens never go to the Vite client.  
-- Propose-before-write is intentional until classifiers are trusted.
+- Scopes: **gmail.readonly** + **calendar.readonly** (no send).  
+- Refresh tokens and AI keys never go to the Vite client.  
+- AI key ciphertext is service-role only; decrypt only inside Edge at sync.

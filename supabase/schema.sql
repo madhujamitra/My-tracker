@@ -248,3 +248,20 @@ create policy "Users can update own mail_needs_reply"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 -- Inserts: service_role via Edge Functions.
+
+-- ---------------------------------------------------------------------------
+-- BYOK AI settings (ciphertext: service_role only via Edge Functions)
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.user_ai_settings (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  ciphertext text not null,
+  key_hint text,
+  base_url text not null default 'https://api.openai.com/v1',
+  model text not null default 'gpt-4o-mini',
+  enabled boolean not null default true,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_ai_settings enable row level security;
+-- No authenticated policies: clients never read ciphertext; use Edge Functions.

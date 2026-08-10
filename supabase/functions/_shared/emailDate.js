@@ -1,0 +1,93 @@
+/** Keep in sync with src/lib/emailDate.js */
+
+const MONTHS = {
+  jan: '01',
+  feb: '02',
+  mar: '03',
+  apr: '04',
+  may: '05',
+  jun: '06',
+  jul: '07',
+  aug: '08',
+  sep: '09',
+  oct: '10',
+  nov: '11',
+  dec: '12',
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0')
+}
+
+export function emailDateToIsoDate(dateHdr, fallbackDate = new Date()) {
+  if (dateHdr) {
+    const m = String(dateHdr).match(
+      /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i,
+    )
+    if (m) {
+      const mon = MONTHS[m[2].toLowerCase().slice(0, 3)]
+      if (mon) return `${m[3]}-${mon}-${pad2(m[1])}`
+    }
+  }
+  return formatYmdUtc(fallbackDate)
+}
+
+export function internalDateToIsoDate(internalDate, fallbackDate = new Date()) {
+  if (internalDate == null || internalDate === '') {
+    return formatYmdUtc(fallbackDate)
+  }
+  const ms = Number(internalDate)
+  if (!Number.isFinite(ms)) return formatYmdUtc(fallbackDate)
+  return formatYmdUtc(new Date(ms))
+}
+
+function formatYmdUtc(d) {
+  const dt = d instanceof Date ? d : new Date(d)
+  if (Number.isNaN(dt.getTime())) {
+    const n = new Date()
+    return `${n.getUTCFullYear()}-${pad2(n.getUTCMonth() + 1)}-${pad2(n.getUTCDate())}`
+  }
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`
+}
+
+export function earlierIsoDate(a, b) {
+  if (!a) return b || null
+  if (!b) return a
+  return a <= b ? a : b
+}
+
+export function parseInviteStartsAt(text = {}, fallbackMs = Date.now() + 86400000) {
+  const raw = `${text.subject || ''} ${text.snippet || ''}`
+  const m = raw.match(
+    /@\s*(?:[A-Za-z]{3}\s+)?([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{4})\s+(\d{1,2}):(\d{2})\s*(am|pm)/i,
+  )
+  if (m) {
+    const months = {
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11,
+    }
+    const mon = months[m[1].toLowerCase().slice(0, 3)]
+    if (mon != null) {
+      let hour = Number(m[4])
+      const min = Number(m[5])
+      const ap = m[6].toLowerCase()
+      if (ap === 'pm' && hour < 12) hour += 12
+      if (ap === 'am' && hour === 12) hour = 0
+      const day = Number(m[2])
+      const year = Number(m[3])
+      const d = new Date(year, mon, day, hour, min, 0, 0)
+      if (!Number.isNaN(d.getTime())) return d.toISOString()
+    }
+  }
+  return new Date(fallbackMs).toISOString()
+}

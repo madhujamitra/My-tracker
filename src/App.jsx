@@ -55,6 +55,7 @@ import {
 import { localISODate } from './utils/date.js';
 import { useAuth } from './auth/AuthContext.jsx';
 import { isModuleEnabled, getWorkspace } from './lib/modules.js';
+import { getVisibleTabs } from './lib/dashboardTabs.js';
 import { countOpenNeedsReply, getJobDashboardStats } from './lib/gmail.js';
 
 const MONTHS = [
@@ -128,7 +129,28 @@ function App({
   const [jobStatsTick, setJobStatsTick] = useState(0);
 
   const applicationsEnabled = isModuleEnabled(taskMetaMap, 'applications');
-  const staleDays = getWorkspace(taskMetaMap).applicationsStaleDays;
+  const workspace = getWorkspace(taskMetaMap);
+  const staleDays = workspace.applicationsStaleDays;
+  const visibleTabs = useMemo(
+    () => getVisibleTabs(workspace),
+    // stringify so nested tab prefs trigger updates
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      applicationsEnabled,
+      JSON.stringify(workspace.tabs),
+      workspace.modules.applications,
+    ],
+  );
+
+  const tabIcons = {
+    todo: ListTodo,
+    completed: CheckCircle2,
+    grid: CalendarDays,
+    timer: Timer,
+    analytics: BarChart2,
+    applications: Briefcase,
+    calendar: CalendarRange,
+  };
 
   const refreshNeedsReplyCount = useCallback(() => {
     if (!user?.id || !applicationsEnabled) {
@@ -152,13 +174,10 @@ function App({
   });
 
   useEffect(() => {
-    if (
-      !applicationsEnabled &&
-      (activeTab === 'applications' || activeTab === 'calendar')
-    ) {
-      setActiveTab('todo');
-    }
-  }, [applicationsEnabled, activeTab]);
+    if (activeTab === 'modules') return;
+    const ok = visibleTabs.some((t) => t.id === activeTab);
+    if (!ok && visibleTabs[0]) setActiveTab(visibleTabs[0].id);
+  }, [visibleTabs, activeTab]);
 
   useEffect(() => {
     refreshNeedsReplyCount();
@@ -727,89 +746,97 @@ function App({
               {currentMonth.name} {selectedYear} Dashboard
             </h1>
             <p className="text-xs text-slate-500">
-              Bi-directionally synced habits, dynamic to-dos, automatic pending rollovers, and goal analytics.
+              {applicationsEnabled
+                ? 'Habits, to-dos, applications, and calendar.'
+                : 'Habits, to-dos, timers, and analytics.'}
             </p>
           </div>
 
           {/* QUICK ADD & NEW TASK BUTTONS */}
-          <div className="flex flex-wrap items-center gap-2">
-            {user?.email ? (
-              <span className="hidden sm:inline text-[10px] font-semibold text-slate-500 max-w-[140px] truncate" title={user.email}>
-                {user.email}
-              </span>
-            ) : null}
-            <form 
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleAddTasks(quickInput);
-                setQuickInput('');
-              }}
-              className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20"
-            >
-              <input
-                type="text"
-                placeholder="Quick add task..."
-                value={quickInput}
-                onChange={(e) => setQuickInput(e.target.value)}
-                className="px-2.5 py-1 text-xs bg-transparent focus:outline-none text-slate-800 w-32 md:w-40 placeholder:text-slate-400"
-              />
+          <div className="flex flex-col items-stretch sm:items-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {user?.email ? (
+                <span
+                  className="hidden sm:inline text-[10px] font-semibold text-slate-500 max-w-[160px] truncate"
+                  title={user.email}
+                >
+                  {user.email}
+                </span>
+              ) : null}
               <button
-                type="submit"
-                disabled={!quickInput.trim()}
-                className="p-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg transition"
-                title="Add Task"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </form>
-
-            <button
-              onClick={() => {
-                setNewTaskType('todo');
-                setIsAddModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl transition shadow-sm hover:shadow-md"
-            >
-              <Plus className="w-4 h-4" /> Add Tasks
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('modules')}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 font-semibold text-xs rounded-xl border transition ${
-                activeTab === 'modules'
-                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-              }`}
-              title="Modules"
-            >
-              <Settings2 className="w-4 h-4" /> Modules
-            </button>
-
-            {applicationsEnabled ? (
-              <NeedsReplyBadge
-                count={needsReplyCount}
-                onOpen={() => {
-                  setActiveTab('todo');
-                  setNeedsReplyOpen(true);
+                type="button"
+                disabled={signingOut}
+                onClick={async () => {
+                  setSigningOut(true);
+                  await signOut();
+                  setSigningOut(false);
                 }}
-              />
-            ) : null}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition"
+                title="Log out"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                {signingOut ? '…' : 'Log out'}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleAddTasks(quickInput);
+                  setQuickInput('');
+                }}
+                className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20"
+              >
+                <input
+                  type="text"
+                  placeholder="Quick add task..."
+                  value={quickInput}
+                  onChange={(e) => setQuickInput(e.target.value)}
+                  className="px-2.5 py-1 text-xs bg-transparent focus:outline-none text-slate-800 w-32 md:w-40 placeholder:text-slate-400"
+                />
+                <button
+                  type="submit"
+                  disabled={!quickInput.trim()}
+                  className="p-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg transition"
+                  title="Add Task"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </form>
 
-            <button
-              type="button"
-              disabled={signingOut}
-              onClick={async () => {
-                setSigningOut(true);
-                await signOut();
-                setSigningOut(false);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition"
-              title="Log out"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              {signingOut ? '…' : 'Log out'}
-            </button>
+              <button
+                onClick={() => {
+                  setNewTaskType('todo');
+                  setIsAddModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl transition shadow-sm hover:shadow-md"
+              >
+                <Plus className="w-4 h-4" /> Add Tasks
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('modules')}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 font-semibold text-xs rounded-xl border transition ${
+                  activeTab === 'modules'
+                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+                title="Modules — arrange dashboard tables"
+              >
+                <Settings2 className="w-4 h-4" /> Modules
+              </button>
+
+              {applicationsEnabled ? (
+                <NeedsReplyBadge
+                  count={needsReplyCount}
+                  onOpen={() => {
+                    setActiveTab('todo');
+                    setNeedsReplyOpen(true);
+                  }}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -881,202 +908,158 @@ function App({
         </div>
 
         {applicationsEnabled ? (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="grid grid-cols-3 xl:grid-cols-6 gap-2">
+            <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 leading-tight">
                   Applied today
                 </span>
-                <div className="p-1.5 bg-sky-50 text-sky-600 rounded-lg">
-                  <BriefcaseBusiness className="w-4 h-4" />
+                <div className="p-1 bg-sky-50 text-sky-600 rounded-md shrink-0">
+                  <BriefcaseBusiness className="w-3.5 h-3.5" />
                 </div>
               </div>
-              <div className="mt-2">
-                <span className="text-2xl font-extrabold text-slate-900">
+              <div className="mt-1.5">
+                <span className="text-xl font-extrabold text-slate-900">
                   {jobStats.appliedToday}
                 </span>
-                <span className="text-xs text-slate-500 ml-1.5">jobs</span>
+                <span className="text-[10px] text-slate-500 ml-1">jobs</span>
               </div>
-              <p className="mt-1 text-[11px] text-slate-500 font-medium">Applications logged today</p>
             </div>
 
-            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 leading-tight">
                   Interviewing
                 </span>
-                <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
-                  <Video className="w-4 h-4" />
+                <div className="p-1 bg-indigo-50 text-indigo-600 rounded-md shrink-0">
+                  <Video className="w-3.5 h-3.5" />
                 </div>
               </div>
-              <div className="mt-2">
-                <span className="text-2xl font-extrabold text-slate-900">
+              <div className="mt-1.5">
+                <span className="text-xl font-extrabold text-slate-900">
                   {jobStats.interviewing}
                 </span>
-                <span className="text-xs text-slate-500 ml-1.5">active</span>
+                <span className="text-[10px] text-slate-500 ml-1">active</span>
               </div>
-              <p className="mt-1 text-[11px] text-slate-500 font-medium">In interview pipeline</p>
             </div>
 
-            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            <div
+              className={`p-3 rounded-xl border shadow-sm relative overflow-hidden transition-colors ${
+                jobStats.offer > 0
+                  ? 'bg-rose-600 border-rose-700 text-white'
+                  : 'bg-slate-100 border-slate-200/80 opacity-60'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider leading-tight ${
+                    jobStats.offer > 0 ? 'text-rose-100' : 'text-slate-500'
+                  }`}
+                >
                   Offers
                 </span>
-                <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
-                  <PartyPopper className="w-4 h-4" />
+                <div
+                  className={`p-1 rounded-md shrink-0 ${
+                    jobStats.offer > 0
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-200 text-slate-500'
+                  }`}
+                >
+                  <PartyPopper className="w-3.5 h-3.5" />
                 </div>
               </div>
-              <div className="mt-2">
-                <span className="text-2xl font-extrabold text-slate-900">{jobStats.offer}</span>
-                <span className="text-xs text-slate-500 ml-1.5">total</span>
+              <div className="mt-1.5">
+                <span
+                  className={`text-xl font-extrabold ${
+                    jobStats.offer > 0 ? 'text-white' : 'text-slate-500'
+                  }`}
+                >
+                  {jobStats.offer}
+                </span>
+                <span
+                  className={`text-[10px] ml-1 ${
+                    jobStats.offer > 0 ? 'text-rose-100' : 'text-slate-400'
+                  }`}
+                >
+                  total
+                </span>
               </div>
-              <p className="mt-1 text-[11px] text-slate-500 font-medium">Marked as offer</p>
             </div>
 
-            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 leading-tight">
                   Rejected
                 </span>
-                <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
-                  <XCircle className="w-4 h-4" />
+                <div className="p-1 bg-rose-50 text-rose-600 rounded-md shrink-0">
+                  <XCircle className="w-3.5 h-3.5" />
                 </div>
               </div>
-              <div className="mt-2">
-                <span className="text-2xl font-extrabold text-slate-900">{jobStats.rejected}</span>
-                <span className="text-xs text-slate-500 ml-1.5">total</span>
+              <div className="mt-1.5">
+                <span className="text-xl font-extrabold text-slate-900">{jobStats.rejected}</span>
+                <span className="text-[10px] text-slate-500 ml-1">total</span>
               </div>
-              <p className="mt-1 text-[11px] text-slate-500 font-medium">Closed as rejected</p>
             </div>
 
-            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 leading-tight">
                   No update
                 </span>
-                <div className="p-1.5 bg-slate-100 text-slate-600 rounded-lg">
-                  <Clock3 className="w-4 h-4" />
+                <div className="p-1 bg-slate-100 text-slate-600 rounded-md shrink-0">
+                  <Clock3 className="w-3.5 h-3.5" />
                 </div>
               </div>
-              <div className="mt-2">
-                <span className="text-2xl font-extrabold text-slate-900">{jobStats.noUpdate}</span>
-                <span className="text-xs text-slate-500 ml-1.5">waiting</span>
+              <div className="mt-1.5">
+                <span className="text-xl font-extrabold text-slate-900">{jobStats.noUpdate}</span>
+                <span className="text-[10px] text-slate-500 ml-1">{staleDays}d+</span>
               </div>
-              <p className="mt-1 text-[11px] text-slate-500 font-medium">
-                Active apps quiet for {staleDays}+ days
-              </p>
             </div>
 
-            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 leading-tight">
                   Needs reply
                 </span>
-                <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg">
-                  <MessageCircle className="w-4 h-4" />
+                <div className="p-1 bg-amber-50 text-amber-600 rounded-md shrink-0">
+                  <MessageCircle className="w-3.5 h-3.5" />
                 </div>
               </div>
-              <div className="mt-2">
-                <span className="text-2xl font-extrabold text-slate-900">
+              <div className="mt-1.5">
+                <span className="text-xl font-extrabold text-slate-900">
                   {jobStats.conversations}
                 </span>
-                <span className="text-xs text-slate-500 ml-1.5">emails</span>
+                <span className="text-[10px] text-slate-500 ml-1">emails</span>
               </div>
-              <p className="mt-1 text-[11px] text-slate-500 font-medium">
-                Open conversations waiting on you
-              </p>
             </div>
           </div>
         ) : null}
 
-        {/* CONTROLS BAR & NAVIGATION TABS */}
-        <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex bg-slate-100 p-1 rounded-xl w-full sm:w-auto overflow-x-auto">
-            <button
-              onClick={() => setActiveTab('todo')}
-              className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
-                activeTab === 'todo' 
-                  ? 'bg-white text-indigo-700 shadow-sm' 
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <ListTodo className="w-3.5 h-3.5 text-indigo-600" />
-              To-Do & Rollover Queue
-            </button>
-            <button
-              onClick={() => setActiveTab('completed')}
-              className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
-                activeTab === 'completed' 
-                  ? 'bg-white text-indigo-700 shadow-sm' 
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
-              Completed Tasks
-            </button>
-            <button
-              onClick={() => setActiveTab('grid')}
-              className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
-                activeTab === 'grid' 
-                  ? 'bg-white text-indigo-700 shadow-sm' 
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <CalendarDays className="w-3.5 h-3.5 text-indigo-600" />
-              Fixed Habit Matrix
-            </button>
-            <button
-              onClick={() => setActiveTab('timer')}
-              className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
-                activeTab === 'timer' 
-                  ? 'bg-white text-indigo-700 shadow-sm' 
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Timer className="w-3.5 h-3.5 text-indigo-600" />
-              Timer
-            </button>
-            <button
-              onClick={() => setActiveTab('analytics')}
-              className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
-                activeTab === 'analytics' 
-                  ? 'bg-white text-indigo-700 shadow-sm' 
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <BarChart2 className="w-3.5 h-3.5 text-indigo-600" />
-              Analytics Trends
-            </button>
-            {applicationsEnabled ? (
-              <>
+        {/* CONTROLS BAR & NAVIGATION TABS (user order / visibility from Modules) */}
+        <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex bg-slate-100 p-1 rounded-xl w-full lg:w-auto overflow-x-auto gap-0.5">
+            {visibleTabs.map((tab) => {
+              const Icon = tabIcons[tab.id] || ListTodo;
+              return (
                 <button
-                  onClick={() => setActiveTab('applications')}
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
                   className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
-                    activeTab === 'applications'
+                    activeTab === tab.id
                       ? 'bg-white text-indigo-700 shadow-sm'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  <Briefcase className="w-3.5 h-3.5 text-indigo-600" />
-                  Applications
+                  <Icon className="w-3.5 h-3.5 text-indigo-600" />
+                  <span className="hidden md:inline">{tab.label}</span>
+                  <span className="md:hidden">{tab.shortLabel}</span>
                 </button>
-                <button
-                  onClick={() => setActiveTab('calendar')}
-                  className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
-                    activeTab === 'calendar'
-                      ? 'bg-white text-indigo-700 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <CalendarRange className="w-3.5 h-3.5 text-indigo-600" />
-                  Calendar
-                </button>
-              </>
-            ) : null}
+              );
+            })}
           </div>
 
-          <div className="relative w-full sm:w-56">
+          <div className="relative w-full lg:w-56 shrink-0">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"

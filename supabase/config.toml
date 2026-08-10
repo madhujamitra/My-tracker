@@ -16,3 +16,12 @@ verify_jwt = true
 
 [functions.google-calendar-list]
 verify_jwt = true
+
+[functions.ai-key-save]
+verify_jwt = true
+
+[functions.ai-key-clear]
+verify_jwt = true
+
+[functions.ai-key-status]
+verify_jwt = true
