@@ -28,7 +28,6 @@ import {
   LogOut
 } from 'lucide-react';
 import { classifyItem, isCellDone, sortQueueItems } from './itemClassify.js';
-import { SEED_META } from './seedData.js';
 import { TimerPage } from './features/TimerPage.jsx';
 import { TimeControl } from './features/TimeControl.jsx';
 import { FocusMode } from './features/FocusMode.jsx';
@@ -39,20 +38,6 @@ import {
 } from './features/focus-prefs.js';
 import { localISODate } from './utils/date.js';
 import { useAuth } from './auth/AuthContext.jsx';
-
-const META_STORAGE_KEY = 'my-task-item-meta';
-
-function loadTaskMetaMap() {
-  try {
-    const raw = localStorage.getItem(META_STORAGE_KEY);
-    const stored = raw ? JSON.parse(raw) : {};
-    if (!stored || typeof stored !== 'object') return { ...SEED_META };
-    // Seed fills gaps; user/local overrides win
-    return { ...SEED_META, ...stored };
-  } catch {
-    return { ...SEED_META };
-  }
-}
 
 const MONTHS = [
   { name: 'January', days: 31 },
@@ -69,13 +54,26 @@ const MONTHS = [
   { name: 'December', days: 31 }
 ];
 
-function App({ data = [], updateItem, deleteItem, insertItem, moveItem }) {
+function App({
+  data = [],
+  updateItem,
+  deleteItem,
+  insertItem,
+  moveItem,
+  taskMetaMap = {},
+  setTaskMetaMap,
+  timerEntries = {},
+  onTimerEntriesChange,
+}) {
   const { user, signOut } = useAuth();
   const now = new Date();
   const liveMonthIndex = now.getMonth();
   const liveYear = now.getFullYear();
   const todayDay = now.getDate();
-  const timers = useDayTimers(localISODate());
+  const timers = useDayTimers(localISODate(), {
+    entries: timerEntries,
+    onEntriesChange: onTimerEntriesChange,
+  });
   const [focusItemId, setFocusItemId] = useState(null);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -84,9 +82,6 @@ function App({ data = [], updateItem, deleteItem, insertItem, moveItem }) {
   const [todoPriorityFilter, setTodoPriorityFilter] = useState('all'); // 'all' | 'High' | 'Medium' | 'Normal'
   const [todoTypeFilter, setTodoTypeFilter] = useState('all'); // Both: tasks + habits
   
-  // Custom user-managed task metadata (priority & itemType overrides)
-  const [taskMetaMap, setTaskMetaMap] = useState(loadTaskMetaMap);
-
   // Month & Year Selector — always start on today's month
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(liveMonthIndex);
   const [selectedYear, setSelectedYear] = useState(liveYear);
@@ -148,14 +143,6 @@ function App({ data = [], updateItem, deleteItem, insertItem, moveItem }) {
       goToToday();
     }
   }, [activeTab]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(META_STORAGE_KEY, JSON.stringify(taskMetaMap));
-    } catch {
-      // ignore quota / private mode
-    }
-  }, [taskMetaMap]);
 
   // Restore focus overlay if a timer is already running and preference allows
   useEffect(() => {
@@ -234,14 +221,14 @@ function App({ data = [], updateItem, deleteItem, insertItem, moveItem }) {
   };
 
   const setTaskPriority = (itemIndex, priority) => {
-    setTaskMetaMap(prev => ({
+    setTaskMetaMap?.(prev => ({
       ...prev,
       [itemIndex]: { ...(prev[itemIndex] || {}), priority }
     }));
   };
 
   const setTaskType = (itemIndex, itemType) => {
-    setTaskMetaMap(prev => ({
+    setTaskMetaMap?.(prev => ({
       ...prev,
       [itemIndex]: {
         ...(prev[itemIndex] || {}),
@@ -471,7 +458,7 @@ function App({ data = [], updateItem, deleteItem, insertItem, moveItem }) {
       newRow[32] = 0;
       
       insertItem(undefined, newRow);
-      setTaskMetaMap(prev => ({
+      setTaskMetaMap?.((prev) => ({
         ...prev,
         [name]: {
           itemType: defaultType,

@@ -95,13 +95,25 @@ src/
 
 If signup shows “check your inbox” and does not enter the app, Confirm email is still enabled in Supabase.
 
-## Data persistence (current vs next)
+## Data persistence
 
-| Data | Today | Next slice |
-|------|--------|------------|
-| Auth users | Supabase Auth | — |
-| Sheet / habits / tasks | In-memory (+ seed); lost on full refresh of sheet rows | Per-user row in Supabase |
-| Timers / meta / focus prefs | `localStorage` | Sync with Supabase `app_state` |
+Per-user workspace is stored in Supabase table `public.app_state`:
+
+| Column | Contents |
+|--------|----------|
+| `user_id` | `auth.users.id` (primary key) |
+| `sheet_data` | Habit/task grid rows (JSON) |
+| `meta` | Item type / priority / createdDay |
+| `timers` | Timer hours by date |
+
+### One-time: create the table
+
+1. Open Supabase → **SQL Editor** → New query.
+2. Paste everything from [`supabase/schema.sql`](supabase/schema.sql).
+3. Click **Run**.
+4. Refresh the app (or click Retry if you see a load error).
+
+New accounts start with an **empty** workspace (no demo tasks). Add tasks/habits from the UI; they save automatically.
 
 ## Deploy on Vercel
 
