@@ -13,6 +13,8 @@ Personal **task & habit workspace** built with Vite, React, and Tailwind. Track 
 | **Timer** | Shared start/stop timer store; only one timer runs at a time. |
 | **Focus mode** | Opens when you start a timer (optional). Shows time worked + until-break countdown. |
 | **Analytics** | Habit consistency and daily volume. |
+| **Modules** | Optional features. Enable **Applications** to track job apps, interviews, and contacts. |
+| **Applications** | (optional) Board + upcoming interviews; stale apps auto-move to Not selected. Optional **Gmail sync** (propose → confirm). |
 | **Auth** | Signup, login, logout via Supabase Auth. Dashboard is gated until you’re signed in. |
 
 ## Stack
@@ -114,6 +116,18 @@ Per-user workspace is stored in Supabase table `public.app_state`:
 4. Refresh the app (or click Retry if you see a load error).
 
 New accounts start with an **empty** workspace (no demo tasks). Add tasks/habits from the UI; they save automatically.
+
+### Applications tables (optional module)
+
+The same [`supabase/schema.sql`](supabase/schema.sql) also creates `applications` and `interview_events` (with RLS). Re-run the full script if you already created `app_state` earlier — policies use `drop … if exists` / `create table if not exists`.
+
+Then: **Modules** → enable **Applications** → use the Applications tab.
+
+Product notes: [`docs/domains/applications/product.md`](docs/domains/applications/product.md).
+
+### Gmail sync (optional)
+
+See [`docs/domains/applications/gmail-setup.md`](docs/domains/applications/gmail-setup.md): Google Cloud OAuth client, Edge Function secrets, and `supabase functions deploy …`.
 
 ## Deploy on Vercel
 

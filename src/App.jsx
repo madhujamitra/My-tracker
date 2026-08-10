@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
   CheckCircle2, 
   Plus, 
@@ -25,19 +25,37 @@ import {
   Filter, 
   Layers,
   Timer,
-  LogOut
+  LogOut,
+  Briefcase,
+  Settings2,
+  CalendarRange,
+  BriefcaseBusiness,
+  MessageCircle,
+  Clock3,
+  XCircle,
+  Video,
+  PartyPopper,
 } from 'lucide-react';
 import { classifyItem, isCellDone, sortQueueItems } from './itemClassify.js';
 import { TimerPage } from './features/TimerPage.jsx';
 import { TimeControl } from './features/TimeControl.jsx';
 import { FocusMode } from './features/FocusMode.jsx';
 import { useDayTimers } from './features/useDayTimers.js';
+import { ApplicationsPage } from './features/applications/ApplicationsPage.jsx';
+import { CalendarPage } from './features/applications/CalendarPage.jsx';
+import {
+  NeedsReplyBadge,
+  NeedsReplyNotice,
+} from './features/applications/NeedsReply.jsx';
+import { useGmailHourlySync } from './features/applications/useGmailHourlySync.js';
 import {
   clearFocusCountdownSession,
   readFocusOnStart,
 } from './features/focus-prefs.js';
 import { localISODate } from './utils/date.js';
 import { useAuth } from './auth/AuthContext.jsx';
+import { isModuleEnabled, getWorkspace } from './lib/modules.js';
+import { countOpenNeedsReply, getJobDashboardStats } from './lib/gmail.js';
 
 const MONTHS = [
   { name: 'January', days: 31 },
@@ -78,7 +96,7 @@ function App({
   const [signingOut, setSigningOut] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('todo'); // 'todo' | 'completed' | 'grid' | 'analytics' | 'timer'
+  const [activeTab, setActiveTab] = useState('todo'); // 'todo' | 'completed' | 'grid' | 'analytics' | 'timer' | 'applications' | 'modules' | 'calendar'
   const [todoPriorityFilter, setTodoPriorityFilter] = useState('all'); // 'all' | 'High' | 'Medium' | 'Normal'
   const [todoTypeFilter, setTodoTypeFilter] = useState('all'); // Both: tasks + habits
   
@@ -97,6 +115,88 @@ function App({
   const [editingIndex, setEditingIndex] = useState(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [selectedDayModal, setSelectedDayModal] = useState(null);
+  const [needsReplyCount, setNeedsReplyCount] = useState(0);
+  const [needsReplyOpen, setNeedsReplyOpen] = useState(false);
+  const [jobStats, setJobStats] = useState({
+    appliedToday: 0,
+    noUpdate: 0,
+    conversations: 0,
+    interviewing: 0,
+    rejected: 0,
+    offer: 0,
+  });
+  const [jobStatsTick, setJobStatsTick] = useState(0);
+
+  const applicationsEnabled = isModuleEnabled(taskMetaMap, 'applications');
+  const staleDays = getWorkspace(taskMetaMap).applicationsStaleDays;
+
+  const refreshNeedsReplyCount = useCallback(() => {
+    if (!user?.id || !applicationsEnabled) {
+      setNeedsReplyCount(0);
+      return;
+    }
+    void countOpenNeedsReply(user.id)
+      .then(setNeedsReplyCount)
+      .catch(() => setNeedsReplyCount(0));
+  }, [user?.id, applicationsEnabled]);
+
+  const refreshJobDashboard = useCallback(() => {
+    refreshNeedsReplyCount();
+    setJobStatsTick((n) => n + 1);
+  }, [refreshNeedsReplyCount]);
+
+  useGmailHourlySync({
+    userId: user?.id,
+    enabled: applicationsEnabled,
+    onSynced: refreshJobDashboard,
+  });
+
+  useEffect(() => {
+    if (
+      !applicationsEnabled &&
+      (activeTab === 'applications' || activeTab === 'calendar')
+    ) {
+      setActiveTab('todo');
+    }
+  }, [applicationsEnabled, activeTab]);
+
+  useEffect(() => {
+    refreshNeedsReplyCount();
+  }, [refreshNeedsReplyCount, activeTab]);
+
+  useEffect(() => {
+    if (!user?.id || !applicationsEnabled) {
+      setJobStats({
+        appliedToday: 0,
+        noUpdate: 0,
+        conversations: 0,
+        interviewing: 0,
+        rejected: 0,
+        offer: 0,
+      });
+      return;
+    }
+    let cancelled = false;
+    void getJobDashboardStats(user.id, staleDays)
+      .then((s) => {
+        if (!cancelled) setJobStats(s);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setJobStats({
+            appliedToday: 0,
+            noUpdate: 0,
+            conversations: 0,
+            interviewing: 0,
+            rejected: 0,
+            offer: 0,
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, applicationsEnabled, staleDays, activeTab, needsReplyCount, jobStatsTick]);
 
   const currentMonth = MONTHS[selectedMonthIndex];
   const activeMonthKey = `${selectedYear}-${selectedMonthIndex}`;
@@ -675,6 +775,29 @@ function App({
 
             <button
               type="button"
+              onClick={() => setActiveTab('modules')}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 font-semibold text-xs rounded-xl border transition ${
+                activeTab === 'modules'
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Modules"
+            >
+              <Settings2 className="w-4 h-4" /> Modules
+            </button>
+
+            {applicationsEnabled ? (
+              <NeedsReplyBadge
+                count={needsReplyCount}
+                onOpen={() => {
+                  setActiveTab('todo');
+                  setNeedsReplyOpen(true);
+                }}
+              />
+            ) : null}
+
+            <button
+              type="button"
               disabled={signingOut}
               onClick={async () => {
                 setSigningOut(true);
@@ -757,6 +880,116 @@ function App({
           </div>
         </div>
 
+        {applicationsEnabled ? (
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Applied today
+                </span>
+                <div className="p-1.5 bg-sky-50 text-sky-600 rounded-lg">
+                  <BriefcaseBusiness className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2">
+                <span className="text-2xl font-extrabold text-slate-900">
+                  {jobStats.appliedToday}
+                </span>
+                <span className="text-xs text-slate-500 ml-1.5">jobs</span>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500 font-medium">Applications logged today</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Interviewing
+                </span>
+                <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <Video className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2">
+                <span className="text-2xl font-extrabold text-slate-900">
+                  {jobStats.interviewing}
+                </span>
+                <span className="text-xs text-slate-500 ml-1.5">active</span>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500 font-medium">In interview pipeline</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Offers
+                </span>
+                <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
+                  <PartyPopper className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2">
+                <span className="text-2xl font-extrabold text-slate-900">{jobStats.offer}</span>
+                <span className="text-xs text-slate-500 ml-1.5">total</span>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500 font-medium">Marked as offer</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Rejected
+                </span>
+                <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
+                  <XCircle className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2">
+                <span className="text-2xl font-extrabold text-slate-900">{jobStats.rejected}</span>
+                <span className="text-xs text-slate-500 ml-1.5">total</span>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500 font-medium">Closed as rejected</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  No update
+                </span>
+                <div className="p-1.5 bg-slate-100 text-slate-600 rounded-lg">
+                  <Clock3 className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2">
+                <span className="text-2xl font-extrabold text-slate-900">{jobStats.noUpdate}</span>
+                <span className="text-xs text-slate-500 ml-1.5">waiting</span>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500 font-medium">
+                Active apps quiet for {staleDays}+ days
+              </p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Needs reply
+                </span>
+                <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg">
+                  <MessageCircle className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2">
+                <span className="text-2xl font-extrabold text-slate-900">
+                  {jobStats.conversations}
+                </span>
+                <span className="text-xs text-slate-500 ml-1.5">emails</span>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500 font-medium">
+                Open conversations waiting on you
+              </p>
+            </div>
+          </div>
+        ) : null}
+
         {/* CONTROLS BAR & NAVIGATION TABS */}
         <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex bg-slate-100 p-1 rounded-xl w-full sm:w-auto overflow-x-auto">
@@ -815,6 +1048,32 @@ function App({
               <BarChart2 className="w-3.5 h-3.5 text-indigo-600" />
               Analytics Trends
             </button>
+            {applicationsEnabled ? (
+              <>
+                <button
+                  onClick={() => setActiveTab('applications')}
+                  className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                    activeTab === 'applications'
+                      ? 'bg-white text-indigo-700 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Briefcase className="w-3.5 h-3.5 text-indigo-600" />
+                  Applications
+                </button>
+                <button
+                  onClick={() => setActiveTab('calendar')}
+                  className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                    activeTab === 'calendar'
+                      ? 'bg-white text-indigo-700 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <CalendarRange className="w-3.5 h-3.5 text-indigo-600" />
+                  Calendar
+                </button>
+              </>
+            ) : null}
           </div>
 
           <div className="relative w-full sm:w-56">
@@ -832,6 +1091,15 @@ function App({
         {/* TAB 1: DYNAMIC TO-DO & PENDING ROLLOVER QUEUE */}
         {activeTab === 'todo' && (
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 space-y-3">
+            {applicationsEnabled ? (
+              <NeedsReplyNotice
+                userId={user?.id}
+                count={needsReplyCount}
+                open={needsReplyOpen}
+                onToggle={() => setNeedsReplyOpen((v) => !v)}
+                onChanged={refreshNeedsReplyCount}
+              />
+            ) : null}
             {/* Header Controls */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div className="flex flex-wrap items-center gap-3">
@@ -1367,6 +1635,25 @@ function App({
             onToggleTimer={handleToggleTimer}
           />
         )}
+
+        {activeTab === 'modules' && (
+          <ApplicationsPage
+            userId={user?.id}
+            taskMetaMap={taskMetaMap}
+            setTaskMetaMap={setTaskMetaMap}
+            showModulesOnly
+          />
+        )}
+
+        {activeTab === 'applications' && applicationsEnabled && (
+          <ApplicationsPage
+            userId={user?.id}
+            taskMetaMap={taskMetaMap}
+            setTaskMetaMap={setTaskMetaMap}
+          />
+        )}
+
+        {activeTab === 'calendar' && applicationsEnabled && <CalendarPage />}
 
         {/* TAB 3: ANALYTICS & VISUAL TRENDS */}
         {activeTab === 'analytics' && (

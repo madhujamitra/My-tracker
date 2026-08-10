@@ -1,0 +1,18 @@
+# Gmail OAuth callback is hit by Google redirect (no JWT).
+[functions.gmail-oauth-callback]
+verify_jwt = false
+
+[functions.gmail-oauth-start]
+verify_jwt = true
+
+[functions.gmail-status]
+verify_jwt = true
+
+[functions.gmail-disconnect]
+verify_jwt = true
+
+[functions.gmail-sync]
+verify_jwt = true
+
+[functions.google-calendar-list]
+verify_jwt = true
