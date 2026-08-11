@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Briefcase,
   CalendarClock,
   Link2,
@@ -26,6 +29,7 @@ import { TabArrangePanel } from './TabArrangePanel.jsx'
 import { AiKeyPanel } from './AiKeyPanel.jsx'
 
 const STATUS_STYLES = {
+  opportunity: 'bg-violet-50 text-violet-800 border-violet-200',
   applied: 'bg-sky-50 text-sky-800 border-sky-200',
   interviewing: 'bg-indigo-50 text-indigo-800 border-indigo-200',
   offer: 'bg-emerald-50 text-emerald-800 border-emerald-200',
@@ -66,6 +70,32 @@ function statusLabel(value) {
   return APPLICATION_STATUSES.find((s) => s.value === value)?.label || value
 }
 
+const STATUS_SORT_RANK = Object.fromEntries(
+  APPLICATION_STATUSES.map((s, i) => [s.value, i]),
+)
+
+function compareApps(a, b, key, dir) {
+  const mul = dir === 'asc' ? 1 : -1
+  let av
+  let bv
+  if (key === 'company') {
+    av = `${a.company || ''}\0${a.role || ''}`.toLowerCase()
+    bv = `${b.company || ''}\0${b.role || ''}`.toLowerCase()
+  } else if (key === 'status') {
+    av = STATUS_SORT_RANK[a.status] ?? 99
+    bv = STATUS_SORT_RANK[b.status] ?? 99
+  } else if (key === 'applied_at') {
+    av = a.applied_at || ''
+    bv = b.applied_at || ''
+  } else {
+    av = a[key] ?? ''
+    bv = b[key] ?? ''
+  }
+  if (av < bv) return -1 * mul
+  if (av > bv) return 1 * mul
+  return (a.company || '').localeCompare(b.company || '')
+}
+
 /**
  * Applications board + upcoming interviews + modules prefs for this feature.
  */
@@ -84,6 +114,8 @@ export function ApplicationsPage({
   const [error, setError] = useState(null)
   const [staleMoved, setStaleMoved] = useState(0)
   const [statusFilter, setStatusFilter] = useState('active')
+  const [sortKey, setSortKey] = useState('status')
+  const [sortDir, setSortDir] = useState('asc')
 
   const [appModal, setAppModal] = useState(null) // null | 'new' | app
   const [appForm, setAppForm] = useState(emptyAppForm())
@@ -120,14 +152,44 @@ export function ApplicationsPage({
   }, [reload])
 
   const filteredApps = useMemo(() => {
-    if (statusFilter === 'all') return apps
-    if (statusFilter === 'active') {
-      return apps.filter((a) =>
-        ['applied', 'interviewing'].includes(a.status),
+    let list
+    if (statusFilter === 'all') list = apps
+    else if (statusFilter === 'active') {
+      list = apps.filter((a) =>
+        ['opportunity', 'applied', 'interviewing'].includes(a.status),
       )
+    } else list = apps.filter((a) => a.status === statusFilter)
+
+    return [...list].sort((a, b) => compareApps(a, b, sortKey, sortDir))
+  }, [apps, statusFilter, sortKey, sortDir])
+
+  const toggleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'applied_at' ? 'desc' : 'asc')
     }
-    return apps.filter((a) => a.status === statusFilter)
-  }, [apps, statusFilter])
+  }
+
+  const SortHeader = ({ columnKey, label, className = '' }) => {
+    const active = sortKey === columnKey
+    const Icon = !active ? ArrowUpDown : sortDir === 'asc' ? ArrowUp : ArrowDown
+    return (
+      <th className={`p-2.5 font-bold ${className}`}>
+        <button
+          type="button"
+          onClick={() => toggleSort(columnKey)}
+          className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-slate-800 ${
+            active ? 'text-indigo-700' : 'text-slate-500'
+          }`}
+        >
+          {label}
+          <Icon className="w-3 h-3 shrink-0" aria-hidden />
+        </button>
+      </th>
+    )
+  }
 
   const openNewApp = () => {
     setAppForm(emptyAppForm())
@@ -384,7 +446,7 @@ export function ApplicationsPage({
               onChange={(e) => setStatusFilter(e.target.value)}
               className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50"
             >
-              <option value="active">Active (applied + interviewing)</option>
+              <option value="active">Active (opportunity + applied + interviewing)</option>
               <option value="all">All statuses</option>
               {APPLICATION_STATUSES.map((s) => (
                 <option key={s.value} value={s.value}>
@@ -405,11 +467,11 @@ export function ApplicationsPage({
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-100">
-                <th className="p-2.5 font-bold">Company / Role</th>
-                <th className="p-2.5 font-bold w-28">Status</th>
-                <th className="p-2.5 font-bold w-28">Applied</th>
-                <th className="p-2.5 font-bold">Contacts</th>
+              <tr className="text-[10px] tracking-wider border-b border-slate-100">
+                <SortHeader columnKey="company" label="Company / Role" />
+                <SortHeader columnKey="status" label="Status" className="w-28" />
+                <SortHeader columnKey="applied_at" label="Applied" className="w-28" />
+                <th className="p-2.5 font-bold uppercase text-slate-500">Contacts</th>
                 <th className="p-2.5 font-bold w-24" />
               </tr>
             </thead>

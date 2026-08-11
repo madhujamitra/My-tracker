@@ -1,38 +1,80 @@
 /** Keep in sync with src/lib/gmailClassify.js */
 
+const IGNORE_RE =
+  /\b(\d+\s+new .{0,60}jobs for you|jobs you may be interested in|see all recommended jobs|linkedin jobs)\b/i
+
 const REJECT_RE =
-  /\b(unfortunately|not moving forward|other candidates|we regret|rejected|not selected|decline to (move|proceed)|will not be (moving|progressing)|position has been filled)\b/i
+  /\b(unfortunately|not moving forward|not to move forward|other candidates|we regret|rejected|not selected|decline to (move|proceed)|will not be (moving|progressing)|position has been filled|decided not to (move|proceed)|no longer (moving|considering))\b/i
+
+const WITHDRAWN_RE =
+  /\b(withdraw(n|al)|withdraw your application|application withdrawal|you(r)? (have )?withdrawn)\b/i
+
+const ON_HOLD_RE =
+  /\b(hiring freeze|paused hiring|temporarily paused|put (the )?(role|position|process) on hold|on hold|role is (currently )?frozen)\b/i
+
+const ACCEPTED_RE =
+  /\b(you have accepted|accepted our offer|offer (has been )?accepted|welcome aboard|signed employment agreement)\b/i
 
 const OFFER_RE =
-  /\b(offer letter|job offer|pleased to (extend|offer)|we are (pleased|happy|excited) to offer|congratulations.{0,40}offer|extend(ing)? (you )?an offer)\b/i
+  /\b(offer letter|job offer|pleased to (extend|offer)|we are (pleased|happy|excited|delighted) to (formally )?offer|formally offer|congratulations.{0,40}offer|extend(ing)? (you )?an offer)\b/i
+
+const ASSESSMENT_RE =
+  /\b(online (coding )?assessment|coding assessment|take[- ]home (assignment|test|challenge)|hackerrank|codility|codesignal|technical assessment)\b/i
 
 const INTERVIEW_RE =
-  /\b(interview|phone screen|video (call|interview)|schedule (a |an )?(call|interview|chat)|meet(ing)? with|onsite|on-site|initial screening)\b/i
+  /\b(interview|phone screen|recruiter screen|screening call|video (call|interview)|schedule (a |an )?(call|interview|chat|screen)|meet(ing)? with|onsite|on-site|initial screening|final (interview )?round)\b/i
 
 const CALENDAR_INVITE_RE =
   /\b(invitation:|invitation from|updated invitation:|canceled event:|cancelled event:|calendar notification|you('ve| have) been invited|join (with )?google meet|zoom meeting invitation)\b/i
 
 const APPLIED_RE =
-  /\b(thank you for (applying|your application)|thanks for your interest|we (have )?received your (application|resume|cv|information)|application (was )?received|application (acknowledg?ement|confirmation)|job application acknowledg?ement|receipt of your (application|resume|cv)|resume received|cv received|(successfully )?(applied|submitted)|your application (for|to|is under review)|we will review your application|confirmation of (your )?application)\b/i
+  /\b(thank you for (applying|your application)|we(?:'ve| have)? received your (application|resume|cv|information)|application (was )?received|application (acknowledg?ement|confirmation)|job application acknowledg?ement|acknowledges? receipt of your (application|resume|cv)|receipt of your (application|resume|cv)|resume received|cv received|successfully applied|your application is under review|we will review your application)\b/i
 
-const RECRUITER_PIPELINE_RE =
-  /\b(interested in (a )?(new )?opportunit(?:y|ies)|opportunit(?:y|ies) with|tech recruiters|represent(ing)? (you|madhuja)|would like to represent|share (it )?with the .{0,40} team|submit(ting)? (your )?resume|resume will be submitted|thank you for sending over your resume|please (share|send|review).{0,60}(resume|availability|jd|job description)|if you are interested|updated copy of (the )?resume)\b/i
+/** Resume/profile already submitted / representation confirmed → Applied */
+const RECRUITER_STRONG_RE =
+  /\b(submitted your (resume|profile)|your (resume|profile) has been (submitted|shared|sent|forwarded)|share(d|ing) (it |your (resume|profile) )?with the .{0,40} team|represent(ing)? (you|madhuja)|would like to represent|presented your (profile|candidacy)|resume will be submitted|hiring (manager|team) is reviewing|we will be representing|thank you for sending over your resume)\b/i
+
+/** Cold / interest outreach — Opportunity, not Applied */
+const RECRUITER_OUTREACH_RE =
+  /\b(came across your profile|wanted to reach out|wanted to discuss|opportunit(?:y|ies) with|tech recruiters|interested in (a )?(new )?opportunit(?:y|ies)|if you('re| are) interested|would you (like|be open)|would you be interested|let me know if|share more details|learn more about|please (share|send).{0,40}resume if interested|contract opportunit(?:y|ies))\b/i
+
+const RESUME_REQUEST_RE =
+  /\b((please )?(send|share|attach).{0,40}(resume|cv)|send me your (most recent )?resume|most recent resume)\b/i
 
 const WAITING_ON_ME_RE =
-  /\b(if you are interested|please (share|send|review|reply|respond|confirm)|share an updated resume|availability for|looking forward to (your|hearing)|when (are you|would you be) available|kindly (reply|confirm)|awaiting your (reply|response)|get back to (us|me)|rsvp)\b/i
+  /\b(if you('re| are) interested|please (share|send|review|reply|respond|confirm)|share an updated resume|availability for|looking forward to (your|hearing)|when (are you|would you be) available|kindly (reply|confirm)|awaiting your (reply|response)|get back to (us|me)|rsvp|let me know if|would you (like|be open)|would you be interested|select a time|use the scheduling link|let us know your decision|complete the assessment)\b/i
 
 const NEEDS_REPLY_RE = WAITING_ON_ME_RE
+
+const DOMAIN_COMPANY = {
+  datadoghq: 'Datadog',
+  googlemail: null,
+}
 
 function cleanCompany(name) {
   if (!name) return null
   let s = String(name).trim().replace(/^["']|["']$/g, '')
-  s = s.replace(/\s+(Inc\.?|LLC|Ltd\.?|Corp\.?|Team)\s*$/i, '').trim()
+  s = s.split(/[.,;:!?\n]/)[0].trim()
+  s = s.replace(/\s+(Inc\.?|LLC|Ltd\.?|Corp\.?|Team|Recruiting|Careers|Talent)\s*$/i, '').trim()
   if (s.length < 2 || s.length > 80) return null
-  if (/^(hi|hello|dear|re|fw|fwd)$/i.test(s)) return null
+  if (/^(hi|hello|dear|re|fw|fwd|best|regards|thanks|thank)$/i.test(s)) return null
   return s
 }
 
-/** Prefer employer (client) over recruiter agency / person From-name. */
+function looksLikePersonName(name) {
+  const n = String(name || '').trim()
+  if (!n) return false
+  if (/\b(recruiting|careers|talent|jobs|team|inc|llc|ltd|corp|acquisition)\b/i.test(n)) {
+    return false
+  }
+  // "Rachel" or "Michael Smith"
+  return /^[A-Z][a-z]+(?:\s+[A-Z][a-z.'-]+)?$/.test(n)
+}
+
+/**
+ * Prefer employer (client) over recruiter agency / person From-name.
+ * @param {{ from?: string, subject?: string, snippet?: string }} msg
+ */
 export function guessCompany(msg = {}) {
   const from = String(msg.from || '')
   const subject = String(msg.subject || '')
@@ -45,7 +87,17 @@ export function guessCompany(msg = {}) {
     if (c) return c
   }
 
-  const withTeam = text.match(/\bwith the\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,2})\s+team\b/)
+  const submittedTo = text.match(
+    /\b(?:submitted|forwarded|sent) (?:your )?(?:profile|resume|cv|application|candidacy) to\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,2})\b/,
+  )
+  if (submittedTo) {
+    const c = cleanCompany(submittedTo[1])
+    if (c) return c
+  }
+
+  const withTeam = text.match(
+    /\bwith the\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,2})\s+team\b/,
+  )
   if (withTeam) {
     const c = cleanCompany(withTeam[1])
     if (c) return c
@@ -72,6 +124,27 @@ export function guessCompany(msg = {}) {
     if (c) return c
   }
 
+  const atCo = text.match(
+    /\b(?:at|@)\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,2})\b/,
+  )
+  if (atCo) {
+    const c = cleanCompany(atCo[1])
+    if (
+      c &&
+      !/\b(Senior|Junior|Staff|Lead|Principal|Software|Frontend|Backend|Full)\b/.test(c)
+    ) {
+      return c
+    }
+  }
+
+  const subjLead = subject.match(
+    /^([A-Z][A-Za-z0-9&.\-]+)\s+(?:Software|Senior|Staff|Lead|Principal|Full|Frontend|Backend|React|Engineer|Developer|opportunity|interview|application)\b/i,
+  )
+  if (subjLead) {
+    const c = cleanCompany(subjLead[1])
+    if (c && !looksLikePersonName(c)) return c
+  }
+
   const angle = from.match(/^([^<]+)</)
   if (angle) {
     let name = angle[1].trim().replace(/^"|"$/g, '')
@@ -79,9 +152,7 @@ export function guessCompany(msg = {}) {
       /\s+(recruiting|careers|talent|jobs|noreply|no-reply|via greenhouse|via lever).*$/i,
       '',
     )
-    if (/^[A-Z][a-z]+\s+[A-Z][a-z]+/.test(name)) {
-      /* person name — skip */
-    } else if (name && !/@/.test(name) && name.length < 80) {
+    if (!looksLikePersonName(name) && name && !/@/.test(name) && name.length < 80) {
       const c = cleanCompany(name)
       if (c) return c
     }
@@ -93,9 +164,13 @@ export function guessCompany(msg = {}) {
       .toLowerCase()
       .replace(/^(mail|email|jobs|careers|noreply|no-reply)\./, '')
     const root = host.split('.')[0]
-    if (
+    if (DOMAIN_COMPANY[root] === null) {
+      /* skip */
+    } else if (DOMAIN_COMPANY[root]) {
+      return DOMAIN_COMPANY[root]
+    } else if (
       root &&
-      !['gmail', 'googlemail', 'yahoo', 'outlook', 'hotmail', 'icloud', 'njoyn'].includes(
+      !['gmail', 'googlemail', 'yahoo', 'outlook', 'hotmail', 'icloud', 'njoyn', 'teksystems', 'roberthalf'].includes(
         root,
       )
     ) {
@@ -111,9 +186,22 @@ export function guessCompany(msg = {}) {
   return null
 }
 
+function withAwaiting(result, text) {
+  if (!result) return result
+  if (result.awaiting_candidate_reply == null) {
+    result.awaiting_candidate_reply = WAITING_ON_ME_RE.test(text)
+  }
+  return result
+}
+
+/**
+ * @param {{ subject?: string, snippet?: string, from?: string }} msg
+ */
 export function classifyJobEmail(msg = {}) {
   const text = `${msg.subject || ''} ${msg.snippet || ''}`
   const company = guessCompany(msg)
+
+  if (IGNORE_RE.test(text)) return null
 
   if (REJECT_RE.test(text)) {
     return {
@@ -121,45 +209,105 @@ export function classifyJobEmail(msg = {}) {
       proposed_status: 'rejected',
       proposed_company: company,
       proposed_title: msg.subject || 'Rejection',
+      awaiting_candidate_reply: false,
     }
   }
 
-  if (OFFER_RE.test(text)) {
+  if (WITHDRAWN_RE.test(text)) {
+    return {
+      kind: 'status_update',
+      proposed_status: 'withdrawn',
+      proposed_company: company,
+      proposed_title: msg.subject || 'Withdrawn',
+      awaiting_candidate_reply: false,
+    }
+  }
+
+  if (ON_HOLD_RE.test(text)) {
+    return {
+      kind: 'status_update',
+      proposed_status: 'not_selected',
+      proposed_company: company,
+      proposed_title: msg.subject || 'On hold',
+      awaiting_candidate_reply: false,
+    }
+  }
+
+  if (ACCEPTED_RE.test(text)) {
     return {
       kind: 'status_update',
       proposed_status: 'offer',
       proposed_company: company,
-      proposed_title: msg.subject || 'Offer',
+      proposed_title: msg.subject || 'Offer accepted',
+      awaiting_candidate_reply: false,
     }
   }
 
-  if (CALENDAR_INVITE_RE.test(text) || INTERVIEW_RE.test(text)) {
+  if (OFFER_RE.test(text)) {
+    return withAwaiting(
+      {
+        kind: 'status_update',
+        proposed_status: 'offer',
+        proposed_company: company,
+        proposed_title: msg.subject || 'Offer',
+      },
+      text,
+    )
+  }
+
+  if (ASSESSMENT_RE.test(text)) {
+    return withAwaiting(
+      {
+        kind: 'interview_event',
+        proposed_status: 'interviewing',
+        proposed_company: company,
+        proposed_title: msg.subject || 'Assessment',
+      },
+      text,
+    )
+  }
+
+  // Resume ask before weak "interest" acks — Opportunity (+ reply)
+  if (RESUME_REQUEST_RE.test(text) && !APPLIED_RE.test(text) && !RECRUITER_STRONG_RE.test(text)) {
+    if (company) {
+      return {
+        kind: 'new_opportunity',
+        proposed_status: 'opportunity',
+        proposed_company: company,
+        proposed_title: msg.subject || 'Job opportunity',
+        awaiting_candidate_reply: true,
+      }
+    }
     return {
-      kind: 'interview_event',
-      proposed_status: 'interviewing',
-      proposed_company: company,
-      proposed_title: msg.subject || 'Interview',
+      kind: 'needs_reply',
+      proposed_status: 'opportunity',
+      proposed_company: null,
+      proposed_title: msg.subject || 'Needs reply',
+      awaiting_candidate_reply: true,
     }
   }
 
+  // Application receipt before "interview availability" wording (Uber-style)
   if (APPLIED_RE.test(text)) {
     return {
       kind: 'new_application',
       proposed_status: 'applied',
       proposed_company: company,
       proposed_title: msg.subject || 'Application received',
-      awaiting_candidate_reply: false,
+      awaiting_candidate_reply: WAITING_ON_ME_RE.test(text),
     }
   }
 
-  if (RECRUITER_PIPELINE_RE.test(text)) {
+  if (RECRUITER_STRONG_RE.test(text)) {
     const awaiting = WAITING_ON_ME_RE.test(text)
     if (!company) {
       if (awaiting) {
         return {
           kind: 'needs_reply',
+          proposed_status: 'opportunity',
           proposed_company: null,
           proposed_title: msg.subject || 'Needs reply',
+          awaiting_candidate_reply: true,
         }
       }
       return null
@@ -173,11 +321,44 @@ export function classifyJobEmail(msg = {}) {
     }
   }
 
+  if (CALENDAR_INVITE_RE.test(text) || INTERVIEW_RE.test(text)) {
+    return withAwaiting(
+      {
+        kind: 'interview_event',
+        proposed_status: 'interviewing',
+        proposed_company: company,
+        proposed_title: msg.subject || 'Interview',
+      },
+      text,
+    )
+  }
+
+  if (RECRUITER_OUTREACH_RE.test(text)) {
+    if (!company) {
+      return {
+        kind: 'needs_reply',
+        proposed_status: 'opportunity',
+        proposed_company: null,
+        proposed_title: msg.subject || 'Recruiter outreach',
+        awaiting_candidate_reply: true,
+      }
+    }
+    return {
+      kind: 'new_opportunity',
+      proposed_status: 'opportunity',
+      proposed_company: company,
+      proposed_title: msg.subject || 'Job opportunity',
+      awaiting_candidate_reply: true,
+    }
+  }
+
   if (NEEDS_REPLY_RE.test(text)) {
     return {
       kind: 'needs_reply',
+      proposed_status: company ? 'opportunity' : null,
       proposed_company: company,
       proposed_title: msg.subject || 'Needs reply',
+      awaiting_candidate_reply: true,
     }
   }
 

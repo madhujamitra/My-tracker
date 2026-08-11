@@ -39,7 +39,8 @@ Job seeker keeps an applications + interviews board that stays current from Gmai
 | 6 | Sync → propose → confirm | shipping |
 | 7 | Calendar API + auto-apply 7d | shipping |
 | 8 | BYOK AI email analysis | shipping — `docs/domains/ai-email-analysis/` |
-| 9 | Applied date from email + recruiter pipeline | **shipped (code)** — [[../gmail-applied-signals/plan]] — redeploy `gmail-sync` |
+| 9 | Applied date from email + recruiter pipeline | shipping — [[../gmail-applied-signals/plan]] |
+| 10 | Application pipeline stages (opportunity ≠ applied) | **shipped (code)** — [[../application-pipeline/plan]] (deploy schema + gmail-sync) |
 
 ## Slice (this ship)
 

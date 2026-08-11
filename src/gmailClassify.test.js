@@ -1,6 +1,11 @@
 import { classifyJobEmail, guessCompany, matchApplication } from './lib/gmailClassify.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import {
+  canAdvanceStatus,
+  collapseStatusForPhaseA,
+  pickForwardStatus,
+} from './lib/pipelineStatus.js'
 
 describe('gmailClassify', () => {
   it('detects rejection', () => {
@@ -65,18 +70,18 @@ describe('gmailClassify', () => {
     assert.equal(r.kind, 'interview_event')
   })
 
-  it('Vistera subject-only (Opportunities with … - Vistera) → applied', () => {
+  it('Vistera subject-only → opportunity (not applied)', () => {
     const r = classifyJobEmail({
       subject: 'Opportunities with IT/IQ Tech Recruiters - Vistera',
       snippet: '',
       from: "Eden O'Rourke <eden@itiq.com>",
     })
-    assert.equal(r.kind, 'new_application')
-    assert.equal(r.proposed_status, 'applied')
+    assert.equal(r.kind, 'new_opportunity')
+    assert.equal(r.proposed_status, 'opportunity')
     assert.equal(r.proposed_company, 'Vistera')
   })
 
-  it('Vistera recruiter pipeline → applied with employer', () => {
+  it('Vistera representation → applied', () => {
     const r = classifyJobEmail({
       subject: 'Opportunities with IT/IQ Tech Recruiters - Vistera',
       snippet:
@@ -97,19 +102,31 @@ describe('gmailClassify', () => {
     })
     assert.equal(r.kind, 'new_application')
     assert.equal(r.proposed_company, 'Mosaic')
-    assert.equal(r.awaiting_candidate_reply, false)
   })
 
-  it('Altimetrik waiting on candidate → applied + awaiting reply', () => {
+  it('CGI interest outreach → opportunity not applied', () => {
+    const r = classifyJobEmail({
+      subject: 'Senior Software Engineer Opportunity at CGI',
+      snippet:
+        "I came across your profile and wanted to reach out regarding a Senior Software Engineer opportunity with CGI. If you're interested, I'd be happy to share more details.",
+      from: 'Sarah <sarah@roberthalf.com>',
+    })
+    assert.equal(r.kind, 'new_opportunity')
+    assert.equal(r.proposed_status, 'opportunity')
+    assert.equal(r.proposed_company, 'CGI')
+    assert.equal(r.awaiting_candidate_reply, true)
+  })
+
+  it('Altimetrik interest ask → opportunity', () => {
     const r = classifyJobEmail({
       subject: 'React Architect OR Lead || Mississauga',
       snippet:
         'Please review the JD and share an updated resume and availability if you are interested. Client: Altimetrik',
       from: 'Rajesh Kumar <rajesh@staffing.com>',
     })
-    assert.equal(r.kind, 'new_application')
+    assert.equal(r.kind, 'new_opportunity')
+    assert.equal(r.proposed_status, 'opportunity')
     assert.equal(r.proposed_company, 'Altimetrik')
-    assert.equal(r.awaiting_candidate_reply, true)
   })
 
   it('Cover Genius screening invite → interview_event', () => {
@@ -137,10 +154,20 @@ describe('gmailClassify', () => {
   })
 
   it('matchApplication finds exact company', () => {
-    const hit = matchApplication(
-      [{ id: 1, company: 'Vistera' }],
-      'Vistera',
-    )
+    const hit = matchApplication([{ id: 1, company: 'Vistera' }], 'Vistera')
     assert.equal(hit.id, 1)
+  })
+})
+
+describe('pipelineStatus', () => {
+  it('collapses Phase B stages', () => {
+    assert.equal(collapseStatusForPhaseA('screening'), 'interviewing')
+    assert.equal(collapseStatusForPhaseA('final_round'), 'interviewing')
+  })
+
+  it('does not move interviewing backward to opportunity', () => {
+    assert.equal(canAdvanceStatus('interviewing', 'opportunity'), false)
+    assert.equal(pickForwardStatus('interviewing', 'opportunity'), 'interviewing')
+    assert.equal(pickForwardStatus('opportunity', 'applied'), 'applied')
   })
 })

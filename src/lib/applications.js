@@ -2,6 +2,7 @@ import { supabase } from './supabase.js'
 import { findStaleApplicationIds } from './staleApplications.js'
 
 export const APPLICATION_STATUSES = [
+  { value: 'opportunity', label: 'Opportunity' },
   { value: 'applied', label: 'Applied' },
   { value: 'interviewing', label: 'Interviewing' },
   { value: 'offer', label: 'Offer' },
@@ -161,7 +162,7 @@ export async function createInterviewEvent(userId, fields) {
     })
     .eq('user_id', userId)
     .eq('id', fields.application_id)
-    .in('status', ['applied', 'interviewing'])
+    .in('status', ['opportunity', 'applied', 'interviewing'])
 
   return data
 }

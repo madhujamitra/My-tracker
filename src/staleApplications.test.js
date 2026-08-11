@@ -16,16 +16,17 @@ describe('staleApplications', () => {
     )
   })
 
-  it('only returns applied/interviewing ids', () => {
+  it('only returns active pipeline ids (incl opportunity)', () => {
     const ids = findStaleApplicationIds(
       [
         { id: '1', status: 'applied', last_activity_at: '2026-07-01T00:00:00Z' },
         { id: '2', status: 'offer', last_activity_at: '2026-07-01T00:00:00Z' },
         { id: '3', status: 'interviewing', last_activity_at: '2026-08-09T00:00:00Z' },
+        { id: '4', status: 'opportunity', last_activity_at: '2026-07-01T00:00:00Z' },
       ],
       20,
       now,
     )
-    assert.deepEqual(ids, ['1'])
+    assert.deepEqual(ids, ['1', '4'])
   })
 })

@@ -92,13 +92,14 @@ export async function getJobDashboardStats(userId, staleDays = 20) {
   if (appsErr) throw appsErr
   const list = apps || []
   const appliedToday = list.filter((a) => {
+    if (a.status !== 'applied') return false
     const d = (a.applied_at || a.created_at || '').slice(0, 10)
     return d === today
   }).length
 
   const cutoff = Date.now() - staleDays * 24 * 60 * 60 * 1000
   const noUpdate = list.filter((a) => {
-    if (!['applied', 'interviewing'].includes(a.status)) return false
+    if (!['opportunity', 'applied', 'interviewing'].includes(a.status)) return false
     const t = new Date(a.last_activity_at || a.created_at || 0).getTime()
     return t > 0 && t < cutoff
   }).length
@@ -108,6 +109,7 @@ export async function getJobDashboardStats(userId, staleDays = 20) {
   const interviewing = byStatus('interviewing')
   const offer = byStatus('offer')
   const applied = byStatus('applied')
+  const opportunity = byStatus('opportunity')
 
   return {
     appliedToday,
@@ -116,7 +118,8 @@ export async function getJobDashboardStats(userId, staleDays = 20) {
     interviewing,
     rejected: byStatus('rejected'),
     offer,
-    /** Active pipeline: applied + interviewing + offer (excludes rejected / withdrawn / not_selected). */
-    inPipeline: applied + interviewing + offer,
+    opportunity,
+    /** Active pipeline: opportunity + applied + interviewing + offer */
+    inPipeline: opportunity + applied + interviewing + offer,
   }
 }

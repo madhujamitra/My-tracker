@@ -15,6 +15,7 @@ import {
   internalDateToIsoDate,
   parseInviteStartsAt,
 } from '../_shared/emailDate.js'
+import { pickForwardStatus } from '../_shared/pipelineStatus.js'
 
 /** Cap LLM calls per sync — cost + latency bound. */
 const MAX_AI_CALLS = 15
@@ -72,23 +73,32 @@ async function ensureApplication(
   status,
   notes,
   appliedAt,
+  role,
 ) {
   const name = company || 'Unknown company'
   const matched = matchApplication(apps, name)
   const now = new Date().toISOString()
+  const roleTrim = role ? String(role).trim() : ''
   if (matched) {
     const nextApplied = earlierIsoDate(matched.applied_at, appliedAt)
+    const nextStatus = status
+      ? pickForwardStatus(matched.status, status)
+      : matched.status
     const patch = {
       last_activity_at: now,
       updated_at: now,
     }
-    if (status && matched.status !== status) {
-      patch.status = status
-      matched.status = status
+    if (nextStatus && nextStatus !== matched.status) {
+      patch.status = nextStatus
+      matched.status = nextStatus
     }
     if (nextApplied && nextApplied !== matched.applied_at) {
       patch.applied_at = nextApplied
       matched.applied_at = nextApplied
+    }
+    if (roleTrim && !matched.role) {
+      patch.role = roleTrim
+      matched.role = roleTrim
     }
     await admin
       .from('applications')
@@ -97,18 +107,20 @@ async function ensureApplication(
       .eq('id', matched.id)
     return matched
   }
+  const insertRow = {
+    user_id: userId,
+    company: name,
+    status: status || 'applied',
+    applied_at: appliedAt || now.slice(0, 10),
+    last_activity_at: now,
+    notes: notes || null,
+    updated_at: now,
+  }
+  if (roleTrim) insertRow.role = roleTrim
   const { data, error } = await admin
     .from('applications')
-    .insert({
-      user_id: userId,
-      company: name,
-      status: status || 'applied',
-      applied_at: appliedAt || now.slice(0, 10),
-      last_activity_at: now,
-      notes: notes || null,
-      updated_at: now,
-    })
-    .select('id, company, status, applied_at')
+    .insert(insertRow)
+    .select('id, company, status, applied_at, role')
     .single()
   if (error) throw error
   apps.push(data)
@@ -208,7 +220,7 @@ Deno.serve(async (req) => {
     const messages = listJson.messages || []
     const { data: appsData } = await admin
       .from('applications')
-      .select('id, company, status, applied_at')
+      .select('id, company, status, applied_at, role')
       .eq('user_id', user.id)
     const apps = appsData || []
 
@@ -337,7 +349,34 @@ Deno.serve(async (req) => {
       }
 
       try {
-        if (classified.kind === 'new_application') {
+        if (classified.kind === 'new_opportunity') {
+          const app = await ensureApplication(
+            admin,
+            user.id,
+            apps,
+            company,
+            'opportunity',
+            `From Gmail: ${subject}`,
+            appliedAt,
+            classified.proposed_role,
+          )
+          audit.application_id = app.id
+          audit.proposed_role = classified.proposed_role || null
+          if (classified.awaiting_candidate_reply) {
+            await upsertNeedsReply(
+              admin,
+              user.id,
+              m.id,
+              subject,
+              snippet,
+              from,
+              dateHdr,
+            )
+            summary.needs_reply += 1
+          }
+          await markProcessed(admin, audit)
+          summary.applications += 1
+        } else if (classified.kind === 'new_application') {
           const app = await ensureApplication(
             admin,
             user.id,
@@ -346,8 +385,10 @@ Deno.serve(async (req) => {
             'applied',
             `From Gmail: ${subject}`,
             appliedAt,
+            classified.proposed_role,
           )
           audit.application_id = app.id
+          audit.proposed_role = classified.proposed_role || null
           if (classified.awaiting_candidate_reply) {
             await upsertNeedsReply(
               admin,
@@ -415,6 +456,20 @@ Deno.serve(async (req) => {
           await markProcessed(admin, audit)
           summary.interviews += 1
         } else if (classified.kind === 'needs_reply') {
+          if (company) {
+            const app = await ensureApplication(
+              admin,
+              user.id,
+              apps,
+              company,
+              'opportunity',
+              `From Gmail: ${subject}`,
+              appliedAt,
+              classified.proposed_role,
+            )
+            audit.application_id = app.id
+            audit.proposed_role = classified.proposed_role || null
+          }
           await upsertNeedsReply(
             admin,
             user.id,

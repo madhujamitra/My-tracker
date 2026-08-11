@@ -1,7 +1,7 @@
 # Implementation plan (pointer)
 
-**Active plan:** [`docs/domains/gmail-applied-signals/plan.md`](domains/gmail-applied-signals/plan.md)
+**Active plan:** [`docs/domains/application-pipeline/plan.md`](domains/application-pipeline/plan.md)
+
+Prior: [`docs/domains/gmail-applied-signals/plan.md`](domains/gmail-applied-signals/plan.md)
 
 Progress: [`docs/IMPLEMENTATION_PROGRESS.md`](IMPLEMENTATION_PROGRESS.md)
-
-Older Applications scaffold plan is superseded; see domain docs under `docs/domains/applications/`.

@@ -48,6 +48,7 @@ create table if not exists public.applications (
   role text,
   status text not null default 'applied'
     check (status in (
+      'opportunity',
       'applied',
       'interviewing',
       'offer',
@@ -63,6 +64,20 @@ create table if not exists public.applications (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Widen applications.status if table already existed
+alter table public.applications drop constraint if exists applications_status_check;
+alter table public.applications
+  add constraint applications_status_check
+  check (status in (
+    'opportunity',
+    'applied',
+    'interviewing',
+    'offer',
+    'rejected',
+    'not_selected',
+    'withdrawn'
+  ));
 
 create index if not exists applications_user_id_idx on public.applications (user_id);
 create index if not exists applications_user_status_idx on public.applications (user_id, status);
@@ -163,7 +178,7 @@ create table if not exists public.gmail_proposals (
   user_id uuid not null references auth.users (id) on delete cascade,
   gmail_message_id text not null,
   kind text not null
-    check (kind in ('new_application', 'status_update', 'interview_event', 'needs_reply')),
+    check (kind in ('new_opportunity', 'new_application', 'status_update', 'interview_event', 'needs_reply')),
   subject text,
   snippet text,
   from_email text,
@@ -184,7 +199,7 @@ create table if not exists public.gmail_proposals (
 alter table public.gmail_proposals drop constraint if exists gmail_proposals_kind_check;
 alter table public.gmail_proposals
   add constraint gmail_proposals_kind_check
-  check (kind in ('new_application', 'status_update', 'interview_event', 'needs_reply'));
+  check (kind in ('new_opportunity', 'new_application', 'status_update', 'interview_event', 'needs_reply'));
 
 alter table public.gmail_proposals drop constraint if exists gmail_proposals_status_check;
 alter table public.gmail_proposals

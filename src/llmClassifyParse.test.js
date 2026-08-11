@@ -37,6 +37,38 @@ describe('normalizeLlmClassification', () => {
     })
     assert.equal(r.proposed_status, 'rejected')
   })
+
+  it('accepts new_opportunity and forces opportunity status', () => {
+    const r = normalizeLlmClassification({
+      kind: 'new_opportunity',
+      proposed_status: 'applied',
+      company: 'CGI',
+      awaiting_candidate_reply: true,
+      job_title: 'Senior Software Engineer',
+    })
+    assert.equal(r.kind, 'new_opportunity')
+    assert.equal(r.proposed_status, 'opportunity')
+    assert.equal(r.proposed_company, 'CGI')
+    assert.equal(r.proposed_role, 'Senior Software Engineer')
+    assert.equal(r.awaiting_candidate_reply, true)
+  })
+
+  it('collapses screening to interviewing', () => {
+    const r = normalizeLlmClassification({
+      kind: 'status_update',
+      proposed_status: 'screening',
+      company: 'Acme',
+    })
+    assert.equal(r.proposed_status, 'interviewing')
+  })
+
+  it('needs_reply defaults proposed_status to opportunity', () => {
+    const r = normalizeLlmClassification({
+      kind: 'needs_reply',
+      company: 'Beta',
+    })
+    assert.equal(r.proposed_status, 'opportunity')
+  })
 })
 
 describe('parseLlmClassificationContent', () => {

@@ -1,64 +1,73 @@
 # Implementation progress
 
-- **Plan:** `docs/domains/gmail-applied-signals/plan.md`
+- **Plan:** `docs/domains/application-pipeline/plan.md`
 - **Branch:** `main`
-- **Baseline:** `npm test` — 30 pass (pre-change)
+- **Baseline:** `npm test` — 41 pass (pre-change)
 - **Pre-existing failures:** none
-- **Deviation:** Implemented gmail-applied-signals (conversation active plan), not obsolete Applications scaffold
 
 ## Phases
 
 | Phase | Status |
 |-------|--------|
-| 1 Applied date from email | **complete** |
-| 2 Recruiter pipeline = applied | **complete** |
-| 3 Invites not missed | **complete** |
-| 4 Validate & docs | **complete** (manual Sync pending user deploy) |
+| 1 Schema + UI statuses | **complete** |
+| 2 Classify outreach ≠ applied | **complete** |
+| 3 Sync + LLM + no-backward | **complete** |
+| 4 Validate & docs | **complete** (AC7 manual Sync pending deploy) |
+| 5 Full stage enum | **deferred** |
 
 ## Acceptance criteria
 
-| ID | Status | Implementation | Test | Runtime |
-|----|--------|----------------|------|---------|
-| AC1 | done | `ensureApplication(..., appliedAt)` from `emailDateToIsoDate` | `emailDate.test.js` | Needs Sync after deploy |
-| AC2 | done | Match path never updates `applied_at` | code review ensureApplication | Needs Sync |
-| AC3 | done | Recruiter classify + employer guess | Vistera/Mosaic/Altimetrik fixtures | Needs Sync |
-| AC4 | done | `awaiting_candidate_reply` → needs_reply upsert | Altimetrik fixture + sync dual write | Needs Sync |
-| AC5 | done | Invitation from + Initial Screening | Cover Genius fixture | Needs Sync (7d window) |
-| AC6 | done | `parseInviteStartsAt` | emailDate.test.js | Needs Sync |
-| AC7 | pending | — | — | User: deploy + Sync now |
+| ID | Status | Evidence |
+|----|--------|----------|
+| AC1 | code done | `APPLICATION_STATUSES` + form/filter; needs SQL alter applied in Supabase |
+| AC2 | pass | `getJobDashboardStats` `inPipeline` includes opportunity |
+| AC3 | pass | `gmailClassify.test.js` CGI interest → `new_opportunity` |
+| AC4 | pass | ack / representation → `new_application` |
+| AC5 | code done | `gmail-sync` `new_opportunity` → status opportunity + needs_reply; needs deploy |
+| AC6 | pass | `pickForwardStatus('interviewing','opportunity')` stays interviewing |
+| AC7 | **blocked on user** | Manual Sync after schema SQL + `gmail-sync` deploy |
 
 ## Files changed
 
-- `src/lib/emailDate.js`, `src/emailDate.test.js`
-- `src/lib/gmailClassify.js`, `src/gmailClassify.test.js`
-- `src/lib/llmClassifyParse.js`
-- `supabase/functions/_shared/{emailDate,classify,llmClassify}.js`
-- `supabase/functions/gmail-sync/index.ts`
-- `docs/domains/gmail-applied-signals/*`, applications product/gmail-setup
-- `docs/IMPLEMENTATION_PLAN.md`, `docs/IMPLEMENTATION_PROGRESS.md`
-- `package.json` (test list)
+- Schema: `supabase/schema.sql`
+- UI: `ApplicationsPage.jsx`, `applications.js`, `gmail.js`, `staleApplications.js`
+- Classify: `gmailClassify.js`, `_shared/classify.js`
+- Pipeline: `pipelineStatus.js` (src + edge)
+- LLM: `llmClassifyParse.js`, `_shared/llmClassify.js`
+- Sync: `gmail-sync/index.ts`
+- Tests: `gmailClassify.test.js`, `llmClassifyParse.test.js`, `staleApplications.test.js`
+- Docs: application-pipeline packet, parent applications product, this progress file
 
 ## Commands executed
 
-- `npm test` → **38 pass**
-- `supabase functions deploy gmail-sync` → **skipped by user** (must run locally)
+| Command | Result |
+|---------|--------|
+| `npm test` | 70 pass (incl. 20 pipeline fixtures) |
+| `npm run build` | ok |
 
-## Decisions
+## Runtime evidence
 
-- Employer preferred via Client: / “with X team” / subject dash-tail over From person name
-- Recruiter without employer → needs_reply only if waiting-on-me, else skip (anti-spam)
-- No `applied_at` backfill of existing rows
+- Unit fixtures cover CGI interest, ack, Vistera, Mosaic, forward-only rank.
+- Live Sync E2E not run in this session (needs deployed function + DB CHECK).
+
+## Decisions and deviations
+
+- Phase A only (+`opportunity`); Phase B stages collapsed in LLM normalize.
+- `needs_reply` with company ensures opportunity app (forward-only if already further along).
+- Fill `role` from LLM `job_title` / `proposed_role` when empty.
 
 ## Unresolved risks
 
-- Mails older than 7d (e.g. Altimetrik Jul 30) won’t appear until query window expands
-- False-positive recruiter → applied spam still possible
-- Deploy not run from this session
+- Existing false Applied rows not auto-backfilled.
+- CHECK violation until user runs schema alter.
+- Deploy lag: code in repo ≠ live Edge until `supabase functions deploy gmail-sync`.
 
 ## Blockers
 
-None for code. **Deploy `gmail-sync`** required for runtime AC7.
+- **B1** User must run schema SQL (status + kind CHECK).
+- **B2** User must redeploy `gmail-sync`.
+- **AC7** Manual Sync after B1–B2.
 
 ## Next eligible phase
 
-None — code complete. User action: deploy + Sync.
+Phase 5 (deferred) after AC7 verified in production.

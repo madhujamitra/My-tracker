@@ -59,6 +59,17 @@ import { isModuleEnabled, getWorkspace } from './lib/modules.js';
 import { getVisibleTabs } from './lib/dashboardTabs.js';
 import { countOpenNeedsReply, getJobDashboardStats } from './lib/gmail.js';
 
+const EMPTY_JOB_STATS = {
+  appliedToday: 0,
+  noUpdate: 0,
+  conversations: 0,
+  interviewing: 0,
+  rejected: 0,
+  offer: 0,
+  opportunity: 0,
+  inPipeline: 0,
+};
+
 const MONTHS = [
   { name: 'January', days: 31 },
   { name: 'February', days: 28 },
@@ -119,15 +130,7 @@ function App({
   const [selectedDayModal, setSelectedDayModal] = useState(null);
   const [needsReplyCount, setNeedsReplyCount] = useState(0);
   const [needsReplyOpen, setNeedsReplyOpen] = useState(false);
-  const [jobStats, setJobStats] = useState({
-    appliedToday: 0,
-    noUpdate: 0,
-    conversations: 0,
-    interviewing: 0,
-    rejected: 0,
-    offer: 0,
-    inPipeline: 0,
-  });
+  const [jobStats, setJobStats] = useState(EMPTY_JOB_STATS);
   const [jobStatsTick, setJobStatsTick] = useState(0);
 
   const applicationsEnabled = isModuleEnabled(taskMetaMap, 'applications');
@@ -187,15 +190,7 @@ function App({
 
   useEffect(() => {
     if (!user?.id || !applicationsEnabled) {
-      setJobStats({
-        appliedToday: 0,
-        noUpdate: 0,
-        conversations: 0,
-        interviewing: 0,
-        rejected: 0,
-        offer: 0,
-        inPipeline: 0,
-      });
+      setJobStats(EMPTY_JOB_STATS);
       return;
     }
     let cancelled = false;
@@ -204,17 +199,7 @@ function App({
         if (!cancelled) setJobStats(s);
       })
       .catch(() => {
-        if (!cancelled) {
-          setJobStats({
-            appliedToday: 0,
-            noUpdate: 0,
-            conversations: 0,
-            interviewing: 0,
-            rejected: 0,
-            offer: 0,
-            inPipeline: 0,
-          });
-        }
+        if (!cancelled) setJobStats(EMPTY_JOB_STATS);
       });
     return () => {
       cancelled = true;
@@ -941,7 +926,7 @@ function App({
         </div>
 
         {applicationsEnabled ? (
-          <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-7 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-8 gap-2">
             <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
               <div className="flex items-center justify-between gap-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 leading-tight">
@@ -956,6 +941,23 @@ function App({
                   {jobStats.inPipeline ?? 0}
                 </span>
                 <span className="text-[10px] text-slate-500 ml-1">active</span>
+              </div>
+            </div>
+
+            <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 leading-tight">
+                  Opportunity
+                </span>
+                <div className="p-1 bg-violet-50 text-violet-700 rounded-md shrink-0">
+                  <Sparkles className="w-3.5 h-3.5" />
+                </div>
+              </div>
+              <div className="mt-1.5">
+                <span className="text-xl font-extrabold text-slate-900">
+                  {jobStats.opportunity ?? 0}
+                </span>
+                <span className="text-[10px] text-slate-500 ml-1">open</span>
               </div>
             </div>
 

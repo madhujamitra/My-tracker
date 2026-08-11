@@ -1,6 +1,6 @@
 /** Pure helpers for stale application detection. */
 
-export const ACTIVE_STATUSES = new Set(['applied', 'interviewing'])
+export const ACTIVE_STATUSES = new Set(['opportunity', 'applied', 'interviewing'])
 
 /**
  * @param {string|Date} lastActivityAt
