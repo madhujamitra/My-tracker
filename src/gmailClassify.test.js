@@ -153,6 +153,49 @@ describe('gmailClassify', () => {
     assert.equal(r.proposed_company, 'CGI')
   })
 
+  it('UBC Workday soft rejection (move forward with other candidates) → rejected', () => {
+    const r = classifyJobEmail({
+      subject: 'Your application to the Position: Software Developer ( JR25262 )',
+      snippet:
+        'Dear Madhuja Thank you for your interest in the Software Developer role and for participating in the selection process. After careful consideration, the selection committee has decided to move forward with other candidates whose experience more closely aligns with the current needs of the role. We wish you every success in your ongoing job search. Sincerely, UBC Recruiting Team',
+      from: 'UBC Notification <noreply@workday.svc.ubc.ca>',
+    })
+    assert.equal(r.kind, 'status_update')
+    assert.equal(r.proposed_status, 'rejected')
+  })
+
+  it('soft reject: experience more closely aligns → rejected', () => {
+    const r = classifyJobEmail({
+      subject: 'Update on your application',
+      snippet:
+        'After careful review, we will move forward with other candidates whose experience more closely aligns with the role.',
+      from: 'Careers <careers@example.com>',
+    })
+    assert.equal(r?.proposed_status, 'rejected')
+  })
+
+  it('positive move forward with you → not rejected', () => {
+    const r = classifyJobEmail({
+      subject: 'Next steps',
+      snippet: "We're excited to move forward with you and schedule an interview.",
+      from: 'Talent <talent@example.com>',
+    })
+    assert.notEqual(r?.proposed_status, 'rejected')
+    assert.equal(r?.kind, 'interview_event')
+  })
+
+  it('UBC Workday soft rejection (Gmail short snippet only) → miss without body', () => {
+    // Real Gmail snippet often stops at the polite opener. gmail-sync fetches a
+    // body excerpt for application-update subjects so the soft-reject line is seen.
+    const r = classifyJobEmail({
+      subject: 'Your application to the Position: Software Developer ( JR25262 )',
+      snippet:
+        'Dear Madhuja Thank you for your interest in the Software Developer role and for participating in the selection process.',
+      from: 'UBC Notification <noreply@workday.svc.ubc.ca>',
+    })
+    assert.equal(r, null)
+  })
+
   it('matchApplication finds exact company', () => {
     const hit = matchApplication([{ id: 1, company: 'Vistera' }], 'Vistera')
     assert.equal(hit.id, 1)

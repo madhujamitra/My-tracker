@@ -3,8 +3,9 @@
 const IGNORE_RE =
   /\b(\d+\s+new .{0,60}jobs for you|jobs you may be interested in|see all recommended jobs|linkedin jobs)\b/i
 
+/** Soft rejects often say "move forward with *other* candidates" — not bare "move forward" (that can be positive). */
 const REJECT_RE =
-  /\b(unfortunately|not moving forward|not to move forward|other candidates|we regret|rejected|not selected|decline to (move|proceed)|will not be (moving|progressing)|position has been filled|decided not to (move|proceed)|no longer (moving|considering))\b/i
+  /\b(unfortunately|not moving forward|not to move forward|move(?:ing)? forward with other (candidates|applicants)|other candidates|whose experience more closely aligns|more closely align(?:s|ed) with|selected (another|other) candidate|going with (another|other) (candidate|applicant)|we regret|rejected|not selected|decline to (move|proceed)|will not be (moving|progressing)|position has been filled|decided not to (move|proceed)|no longer (moving|considering)|wish you (every )?success in your (ongoing )?job search)\b/i
 
 const WITHDRAWN_RE =
   /\b(withdraw(n|al)|withdraw your application|application withdrawal|you(r)? (have )?withdrawn)\b/i

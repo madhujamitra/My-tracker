@@ -53,6 +53,7 @@ Screening/phone/technical/calendar invite. awaiting_candidate_reply if they must
 
 STATUS UPDATE
 kind = "status_update" with proposed_status rejected | offer | withdrawn | not_selected | interviewing
+Soft rejection (still rejected): "move forward with other candidates", "whose experience more closely aligns", "wish you success in your job search". Do NOT treat positive "move forward with you/your candidacy" as rejection.
 
 NEEDS REPLY
 kind = "needs_reply" when the main purpose is candidate action. If no application started, proposed_status = "opportunity".

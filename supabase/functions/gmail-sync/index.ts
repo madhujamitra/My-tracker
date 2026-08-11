@@ -20,11 +20,78 @@ import { pickForwardStatus } from '../_shared/pipelineStatus.js'
 /** Cap LLM calls per sync — cost + latency bound. */
 const MAX_AI_CALLS = 15
 
+/** Soft rejects often hide past Gmail's short snippet — only fetch body for likely app updates. */
+const APPLICATION_UPDATE_SUBJECT_RE =
+  /\b(your application|application (to|for|update|status)|position:|update on your|thank you for (your )?interest|selection process)\b/i
+
 function headerValue(headers, name) {
   const h = (headers || []).find(
     (x) => String(x.name).toLowerCase() === name.toLowerCase(),
   )
   return h?.value || ''
+}
+
+function decodeBase64Url(data) {
+  if (!data) return ''
+  try {
+    const pad = '='.repeat((4 - (data.length % 4)) % 4)
+    const b64 = (data + pad).replace(/-/g, '+').replace(/_/g, '/')
+    return atob(b64)
+  } catch {
+    return ''
+  }
+}
+
+/** Prefer text/plain; fall back to stripped text/html. */
+function extractPlainText(payload, depth = 0) {
+  if (!payload || depth > 8) return ''
+  const mime = String(payload.mimeType || '').toLowerCase()
+  if (mime === 'text/plain' && payload.body?.data) {
+    return decodeBase64Url(payload.body.data)
+  }
+  const parts = payload.parts || []
+  for (const p of parts) {
+    if (String(p.mimeType || '').toLowerCase() === 'text/plain' && p.body?.data) {
+      return decodeBase64Url(p.body.data)
+    }
+  }
+  for (const p of parts) {
+    const nested = extractPlainText(p, depth + 1)
+    if (nested) return nested
+  }
+  if (mime === 'text/html' && payload.body?.data) {
+    return decodeBase64Url(payload.body.data)
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+  for (const p of parts) {
+    if (String(p.mimeType || '').toLowerCase() === 'text/html' && p.body?.data) {
+      return decodeBase64Url(p.body.data)
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    }
+  }
+  return ''
+}
+
+async function fetchBodyExcerpt(accessToken, messageId) {
+  const res = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  )
+  if (!res.ok) return ''
+  const full = await res.json()
+  const text = extractPlainText(full.payload)
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 1800)
 }
 
 async function ensureAccessToken(admin, row) {
@@ -263,6 +330,19 @@ Deno.serve(async (req) => {
         : internalDateToIsoDate(msg.internalDate)
 
       let classified = classifyJobEmail(mail)
+
+      // Short Gmail snippets often stop before soft-reject lines ("other candidates").
+      if (!classified && APPLICATION_UPDATE_SUBJECT_RE.test(subject)) {
+        try {
+          const excerpt = await fetchBodyExcerpt(accessToken, m.id)
+          if (excerpt && excerpt.length > snippet.length + 40) {
+            mail.snippet = `${snippet} ${excerpt}`.trim()
+            classified = classifyJobEmail(mail)
+          }
+        } catch (bodyErr) {
+          console.error('body excerpt failed', m.id, bodyErr)
+        }
+      }
 
       if (
         !classified &&
