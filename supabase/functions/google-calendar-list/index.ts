@@ -27,6 +27,57 @@ async function ensureAccessToken(admin, row) {
   return tokens.access_token
 }
 
+function mapEvent(ev) {
+  return {
+    id: ev.id,
+    summary: ev.summary || '(No title)',
+    description: ev.description || null,
+    location: ev.location || null,
+    htmlLink: ev.htmlLink || null,
+    status: ev.status || null,
+    start: ev.start?.dateTime || ev.start?.date || null,
+    end: ev.end?.dateTime || ev.end?.date || null,
+    hangoutLink: ev.hangoutLink || ev.conferenceData?.entryPoints?.[0]?.uri || null,
+  }
+}
+
+/** Paginate Calendar API so past busy months don't drop today/future invites. */
+async function fetchPrimaryEvents(accessToken, timeMin, timeMax) {
+  const items = []
+  let pageToken = ''
+  for (let page = 0; page < 10; page += 1) {
+    const url = new URL(
+      'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+    )
+    url.searchParams.set('singleEvents', 'true')
+    url.searchParams.set('orderBy', 'startTime')
+    url.searchParams.set('timeMin', timeMin)
+    url.searchParams.set('timeMax', timeMax)
+    url.searchParams.set('maxResults', '250')
+    // Pending interview invites the user hasn't accepted yet
+    url.searchParams.set('showHiddenInvitations', 'true')
+    if (pageToken) url.searchParams.set('pageToken', pageToken)
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    const body = await res.json()
+    if (!res.ok) {
+      const msg = body.error?.message || 'Calendar API failed'
+      const err = new Error(msg)
+      err.status = res.status
+      throw err
+    }
+    for (const ev of body.items || []) {
+      if (ev.status === 'cancelled') continue
+      items.push(mapEvent(ev))
+    }
+    pageToken = body.nextPageToken || ''
+    if (!pageToken) break
+  }
+  return items
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -47,46 +98,46 @@ Deno.serve(async (req) => {
     const accessToken = await ensureAccessToken(admin, conn)
 
     const now = new Date()
-    // Wide enough for month-grid navigation (± ~45 days from today)
-    const timeMin = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString()
-    const timeMax = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59).toISOString()
+    // Only today + future (past events are not useful for scheduling invites).
+    const timeMin = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0,
+      0,
+      0,
+    ).toISOString()
+    // ~6 months ahead so interview loops still show up
+    const timeMax = new Date(
+      now.getFullYear(),
+      now.getMonth() + 6,
+      now.getDate(),
+      23,
+      59,
+      59,
+    ).toISOString()
 
-    const url = new URL(
-      'https://www.googleapis.com/calendar/v3/calendars/primary/events',
-    )
-    url.searchParams.set('singleEvents', 'true')
-    url.searchParams.set('orderBy', 'startTime')
-    url.searchParams.set('timeMin', timeMin)
-    url.searchParams.set('timeMax', timeMax)
-    url.searchParams.set('maxResults', '100')
-
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-    const body = await res.json()
-    if (!res.ok) {
-      const msg = body.error?.message || 'Calendar API failed'
-      if (String(msg).toLowerCase().includes('insufficient') || res.status === 403) {
+    let events
+    try {
+      events = await fetchPrimaryEvents(accessToken, timeMin, timeMax)
+    } catch (apiErr) {
+      const msg = apiErr?.message || String(apiErr)
+      if (
+        String(msg).toLowerCase().includes('insufficient') ||
+        apiErr?.status === 403
+      ) {
         throw new Error(
           'Calendar access missing — Disconnect Gmail, then Connect again to grant Calendar permission',
         )
       }
-      throw new Error(msg)
+      throw apiErr
     }
 
-    const events = (body.items || []).map((ev) => ({
-      id: ev.id,
-      summary: ev.summary || '(No title)',
-      description: ev.description || null,
-      location: ev.location || null,
-      htmlLink: ev.htmlLink || null,
-      status: ev.status || null,
-      start: ev.start?.dateTime || ev.start?.date || null,
-      end: ev.end?.dateTime || ev.end?.date || null,
-      hangoutLink: ev.hangoutLink || null,
-    }))
-
-    return json({ ok: true, events })
+    return json({
+      ok: true,
+      events,
+      meta: { timeMin, timeMax, count: events.length },
+    })
   } catch (err) {
     return json({ error: err.message || String(err) }, 400)
   }

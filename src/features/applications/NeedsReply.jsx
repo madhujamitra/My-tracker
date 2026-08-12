@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Check, ChevronDown, ChevronUp, Loader2, MailWarning } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, ExternalLink, Loader2, MailWarning } from 'lucide-react'
 import { listNeedsReply, markNeedsReplyDone } from '../../lib/gmail.js'
+import { gmailOpenUrl } from '../../lib/gmailLinks.js'
 
 /** Inline notification + expandable list for the To-Do queue page. */
 export function NeedsReplyNotice({ userId, count, open, onToggle, onChanged }) {
@@ -95,6 +96,17 @@ export function NeedsReplyNotice({ userId, count, open, onToggle, onChanged }) {
                   </p>
                   <p className="text-[11px] text-slate-500">{item.from_email}</p>
                   <p className="text-[11px] text-slate-600 mt-0.5 line-clamp-2">{item.snippet}</p>
+                  {gmailOpenUrl(item.gmail_message_id) ? (
+                    <a
+                      href={gmailOpenUrl(item.gmail_message_id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold text-indigo-700 hover:text-indigo-900"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      Open in Gmail
+                    </a>
+                  ) : null}
                 </div>
                 <button
                   type="button"

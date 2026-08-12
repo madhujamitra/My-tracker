@@ -41,15 +41,19 @@ OPPORTUNITY (cold / interest outreach — NOT applied yet)
 kind = "new_opportunity", proposed_status = "opportunity"
 Recruiter contacts about a concrete role but candidate has NOT been submitted.
 Examples: came across your profile; opportunity at CGI; if you're interested; would you like to learn more.
+LinkedIn InMail / LinkedIn messages (from hit-reply@linkedin.com, inmail-hit-reply@linkedin.com, "InMail", "Learn about a new opportunity", "Message replied") are OPPORTUNITY, not interview. Set awaiting_candidate_reply = true when a reply/resume/interest response is expected.
 Set awaiting_candidate_reply = true when they ask for a reply.
 
 APPLIED (receipt / submission / representation)
 kind = "new_application", proposed_status = "applied"
-Thank you for applying; acknowledgement; receipt of resume; submitted your profile; representing you; shared with hiring team.
+Thank you for applying; acknowledgement; receipt of resume; "application has been submitted"; "Application to X successfully submitted"; you applied today; submitted your profile; representing you; shared with hiring team.
+These are NOT interviews — even if the board/marketplace (Wellfound, Ashby) mentions next steps or introductions.
 
 INTERVIEW
 kind = "interview_event", proposed_status = "interviewing"
-Screening/phone/technical/calendar invite. awaiting_candidate_reply if they must pick a slot.
+Screening/phone/technical/calendar invite (Google Calendar / Zoom "Invitation: …"). awaiting_candidate_reply if they must pick a slot.
+NEVER classify LinkedIn connection invites ("You have an invitation" from invitations@linkedin.com, wants to connect, people you may know) as interview — those are ignore.
+NEVER classify LinkedIn InMail/messages as interview_event just because the subject says invitation/opportunity.
 
 STATUS UPDATE
 kind = "status_update" with proposed_status rejected | offer | withdrawn | not_selected | interviewing
@@ -57,10 +61,12 @@ Soft rejection (still rejected): "move forward with other candidates", "whose ex
 
 NEEDS REPLY
 kind = "needs_reply" when the main purpose is candidate action. If no application started, proposed_status = "opportunity".
+LinkedIn InMail asking for resume/thoughts/reply → needs_reply or new_opportunity with awaiting_candidate_reply=true.
 Do NOT use needs_reply instead of interview_event or new_application when those are primary.
 
 IGNORE
 kind = "ignore" for job alerts, newsletters, mass spam with no concrete employer/role.
+Also ignore LinkedIn *connection* invitations (network requests), not recruiter InMail.
 
 COMPANY: employer not agency/person. If unsure, null.
 TITLE: short label. Return ONLY JSON.`

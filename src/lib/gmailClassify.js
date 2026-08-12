@@ -5,7 +5,7 @@ const IGNORE_RE =
 
 /** Soft rejects often say "move forward with *other* candidates" — not bare "move forward" (that can be positive). */
 const REJECT_RE =
-  /\b(unfortunately|not moving forward|not to move forward|move(?:ing)? forward with other (candidates|applicants)|other candidates|whose experience more closely aligns|more closely align(?:s|ed) with|selected (another|other) candidate|going with (another|other) (candidate|applicant)|we regret|rejected|not selected|decline to (move|proceed)|will not be (moving|progressing)|position has been filled|decided not to (move|proceed)|no longer (moving|considering)|wish you (every )?success in your (ongoing )?job search)\b/i
+  /\b(unfortunately|not moving forward|not to move forward|move(?:ing)? forward with other (candidates|applicants)|other candidates|whose experience more closely aligns|more closely align(?:s|ed) with|selected (another|other) candidate|going with (another|other) (candidate|applicant)|we regret|rejected|not selected|decline to (move|proceed)|will not be (moving|progressing)|position has been filled|decided not to (move|proceed)|no longer (moving|considering)|wish you (every )?success in your (ongoing )?job search|wish you the best in your (ongoing )?job search)\b/i
 
 const WITHDRAWN_RE =
   /\b(withdraw(n|al)|withdraw your application|application withdrawal|you(r)? (have )?withdrawn)\b/i
@@ -29,7 +29,7 @@ const CALENDAR_INVITE_RE =
   /\b(invitation:|invitation from|updated invitation:|canceled event:|cancelled event:|calendar notification|you('ve| have) been invited|join (with )?google meet|zoom meeting invitation)\b/i
 
 const APPLIED_RE =
-  /\b(thank you for (applying|your application)|we(?:'ve| have)? received your (application|resume|cv|information)|application (was )?received|application (acknowledg?ement|confirmation)|job application acknowledg?ement|acknowledges? receipt of your (application|resume|cv)|receipt of your (application|resume|cv)|resume received|cv received|successfully applied|your application is under review|we will review your application)\b/i
+  /\b(thank you for (applying|your application)|we(?:'ve| have)? received your (application|resume|cv|information)|application (was )?received|application (has been )?submitted|application to .{1,60} successfully submitted|successfully submitted|successfully applied|you applied (today|successfully)|application (acknowledg?ement|confirmation)|job application acknowledg?ement|acknowledges? receipt of your (application|resume|cv)|receipt of your (application|resume|cv)|resume received|cv received|your application is under review|we will review your application)\b/i
 
 /** Resume/profile already submitted / representation confirmed → Applied */
 const RECRUITER_STRONG_RE =
@@ -37,7 +37,7 @@ const RECRUITER_STRONG_RE =
 
 /** Cold / interest outreach — Opportunity, not Applied */
 const RECRUITER_OUTREACH_RE =
-  /\b(came across your profile|wanted to reach out|wanted to discuss|opportunit(?:y|ies) with|tech recruiters|interested in (a )?(new )?opportunit(?:y|ies)|if you('re| are) interested|would you (like|be open)|would you be interested|let me know if|share more details|learn more about|please (share|send).{0,40}resume if interested|contract opportunit(?:y|ies))\b/i
+  /\b(came across your (profile|background)|wanted to reach out|wanted to discuss|opportunit(?:y|ies) with|tech recruiters|interested in (a )?(new )?opportunit(?:y|ies)|learn about a new opportunity|exciting opportunity|great fit for|if you('re| are) interested|would you (like|be open)|would you be interested|let me know if|share more details|learn more about|please (share|send).{0,40}resume if interested|contract opportunit(?:y|ies)|inmail)\b/i
 
 const RESUME_REQUEST_RE =
   /\b((please )?(send|share|attach).{0,40}(resume|cv)|send me your (most recent )?resume|most recent resume)\b/i
@@ -46,6 +46,42 @@ const WAITING_ON_ME_RE =
   /\b(if you('re| are) interested|please (share|send|review|reply|respond|confirm)|share an updated resume|availability for|looking forward to (your|hearing)|when (are you|would you be) available|kindly (reply|confirm)|awaiting your (reply|response)|get back to (us|me)|rsvp|let me know if|would you (like|be open)|would you be interested|select a time|use the scheduling link|let us know your decision|complete the assessment)\b/i
 
 const NEEDS_REPLY_RE = WAITING_ON_ME_RE
+
+const LINKEDIN_CONNECTION_RE =
+  /\b(you have an invitation|wants? to connect|connect with you|accepted your (connection )?invitation|people you may know)\b/i
+
+const LINKEDIN_INMAIL_RE =
+  /\b(inmail|learn about a new opportunity|message replied|you have a new message)\b/i
+
+function fromAddress(msg = {}) {
+  return String(msg.from || '').toLowerCase()
+}
+
+export function isLinkedInMail(msg = {}) {
+  return /@linkedin\.com\b/.test(fromAddress(msg))
+}
+
+/** Network connection request — not a job interview / opportunity. */
+export function isLinkedInConnectionInvite(msg = {}) {
+  const from = fromAddress(msg)
+  if (!/@linkedin\.com\b/.test(from)) return false
+  if (/invitations@linkedin\.com/.test(from)) return true
+  if (/you have an invitation/i.test(String(msg.subject || ''))) return true
+  const text = `${msg.subject || ''} ${msg.snippet || ''}`
+  return LINKEDIN_CONNECTION_RE.test(text) && !LINKEDIN_INMAIL_RE.test(text)
+}
+
+/** Recruiter InMail / LinkedIn message — Opportunity (+ usually needs reply). */
+export function isLinkedInInMailOrMessage(msg = {}) {
+  const from = fromAddress(msg)
+  if (!/@linkedin\.com\b/.test(from)) return false
+  if (isLinkedInConnectionInvite(msg)) return false
+  if (/(inmail-hit-reply|hit-reply|messages-noreply|messaging-)@linkedin\.com/.test(from)) {
+    return true
+  }
+  const text = `${msg.subject || ''} ${msg.snippet || ''}`
+  return LINKEDIN_INMAIL_RE.test(text)
+}
 
 const DOMAIN_COMPANY = {
   datadoghq: 'Datadog',
@@ -88,6 +124,27 @@ export function guessCompany(msg = {}) {
     if (c) return c
   }
 
+  // Wellfound / Ashby-style: "Application to Liftoff successfully submitted"
+  const appTo =
+    subject.match(
+      /\bApplication to\s+(.+?)\s+successfully\s+submitted\b/i,
+    ) ||
+    subject.match(/\bApplication to\s+(.+?)\s+(?:submitted|received|confirmed)\b/i)
+  if (appTo) {
+    const c = cleanCompany(appTo[1])
+    // Employer from subject — do not treat single-token brands as person names.
+    if (c) return c
+  }
+
+  // "… Associate Software Developer position at DarioHealth" (subject only)
+  const posAt = subject.match(
+    /\b(?:position|role|opening) at\s+([A-Za-z0-9&.\-]+(?:\s+[A-Za-z0-9&.\-]+){0,2})\s*$/i,
+  )
+  if (posAt) {
+    const c = cleanCompany(posAt[1])
+    if (c) return c
+  }
+
   const submittedTo = text.match(
     /\b(?:submitted|forwarded|sent) (?:your )?(?:profile|resume|cv|application|candidacy) to\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,2})\b/,
   )
@@ -117,16 +174,38 @@ export function guessCompany(msg = {}) {
     }
   }
 
-  const oppWith = text.match(
-    /\b(?:opportunit(?:y|ies) with|role with|position (?:with|at)|Tech Lead opportunit(?:y|ies) with)\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,3})/,
+  const oppWith = subject.match(
+    /\b(?:opportunit(?:y|ies) with|role with|position (?:with|at)|Tech Lead opportunit(?:y|ies) with)\s+([A-Za-z0-9&.\-]+(?:\s+[A-Za-z0-9&.\-]+){0,3})\s*$/i,
   )
   if (oppWith) {
     const c = cleanCompany(oppWith[1])
     if (c) return c
   }
 
+  const joinCo = subject.match(
+    /\bJoin\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,3})\b/,
+  )
+  if (joinCo) {
+    const c = cleanCompany(joinCo[1])
+    if (c && !looksLikePersonName(c)) return c
+  }
+
+  // Prefer subject "at Company" so snippet salutations ("Madhuja Thank…") don't stick on.
+  const atCoSubj = subject.match(
+    /\b(?:at|@)\s+([A-Za-z0-9&.\-]+(?:\s+[A-Za-z0-9&.\-]+){0,2})\s*$/i,
+  )
+  if (atCoSubj) {
+    const c = cleanCompany(atCoSubj[1])
+    if (
+      c &&
+      !/\b(Senior|Junior|Staff|Lead|Principal|Software|Frontend|Backend|Full)\b/i.test(c)
+    ) {
+      return c
+    }
+  }
+
   const atCo = text.match(
-    /\b(?:at|@)\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,2})\b/,
+    /\b(?:at|@)\s+([A-Z][A-Za-z0-9&.\-]*(?:\s+[A-Z][A-Za-z0-9&.\-]*){0,2})(?=\s|$|[.,;:!?]|\b(?:thank|hi|hello|dear|after|we|your|madhuja)\b)/,
   )
   if (atCo) {
     const c = cleanCompany(atCo[1])
@@ -203,6 +282,39 @@ export function classifyJobEmail(msg = {}) {
   const company = guessCompany(msg)
 
   if (IGNORE_RE.test(text)) return null
+
+  // LinkedIn network invites ≠ calendar/interview (was creating fake Blend interviews).
+  if (isLinkedInConnectionInvite(msg)) return null
+
+  // LinkedIn InMail / messaging → Opportunity (+ reply), never interview_event.
+  if (isLinkedInInMailOrMessage(msg)) {
+    if (
+      REJECT_RE.test(text) ||
+      WITHDRAWN_RE.test(text) ||
+      OFFER_RE.test(text) ||
+      ACCEPTED_RE.test(text)
+    ) {
+      // Fall through to normal status rules below.
+    } else {
+      if (company) {
+        return {
+          kind: 'new_opportunity',
+          proposed_status: 'opportunity',
+          proposed_company: company,
+          proposed_role: null,
+          proposed_title: msg.subject || 'LinkedIn opportunity',
+          awaiting_candidate_reply: true,
+        }
+      }
+      return {
+        kind: 'needs_reply',
+        proposed_status: 'opportunity',
+        proposed_company: null,
+        proposed_title: msg.subject || 'LinkedIn message',
+        awaiting_candidate_reply: true,
+      }
+    }
+  }
 
   if (REJECT_RE.test(text)) {
     return {
@@ -322,7 +434,23 @@ export function classifyJobEmail(msg = {}) {
     }
   }
 
-  if (CALENDAR_INVITE_RE.test(text) || INTERVIEW_RE.test(text)) {
+  if (
+    !isLinkedInMail(msg) &&
+    (CALENDAR_INVITE_RE.test(text) || INTERVIEW_RE.test(text))
+  ) {
+    return withAwaiting(
+      {
+        kind: 'interview_event',
+        proposed_status: 'interviewing',
+        proposed_company: company,
+        proposed_title: msg.subject || 'Interview',
+      },
+      text,
+    )
+  }
+
+  // Non-InMail LinkedIn mail that still mentions an interview (rare) — allow.
+  if (isLinkedInMail(msg) && INTERVIEW_RE.test(text) && !isLinkedInInMailOrMessage(msg)) {
     return withAwaiting(
       {
         kind: 'interview_event',

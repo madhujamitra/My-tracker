@@ -91,6 +91,22 @@ export function CalendarPage() {
 
   const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
+  const upcomingCount = useMemo(() => {
+    return events.filter((e) => {
+      if (!e.start) return false
+      if (/^\d{4}-\d{2}-\d{2}$/.test(e.start)) return e.start >= todayKey
+      return new Date(e.start) >= new Date(`${todayKey}T00:00:00`)
+    }).length
+  }, [events, todayKey])
+
+  useEffect(() => {
+    if (selectedDay != null) return
+    const [y, m, d] = todayKey.split('-').map(Number)
+    if (viewYear === y && viewMonth === m - 1) {
+      setSelectedDay(d)
+    }
+  }, [viewYear, viewMonth, selectedDay, todayKey])
+
   const prevMonth = () => {
     if (viewMonth === 0) {
       setViewMonth(11)
@@ -120,7 +136,15 @@ export function CalendarPage() {
           <CalendarDays className="w-5 h-5 text-indigo-600" />
           <div>
             <h2 className="text-base font-bold text-slate-900">Calendar</h2>
-            <p className="text-[11px] text-slate-500">Google Calendar · primary</p>
+            <p className="text-[11px] text-slate-500">
+              Google Calendar · primary · today &amp; future only
+            </p>
+            {!loading && !error ? (
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {events.length} loaded
+                {upcomingCount ? ` · ${upcomingCount} from today on` : ''}
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-2">

@@ -27,6 +27,7 @@ import { getWorkspace, patchWorkspace } from '../../lib/modules.js'
 import { GmailPanel } from './GmailPanel.jsx'
 import { TabArrangePanel } from './TabArrangePanel.jsx'
 import { AiKeyPanel } from './AiKeyPanel.jsx'
+import { extractGmailUrlFromNotes } from '../../lib/gmailLinks.js'
 
 const STATUS_STYLES = {
   opportunity: 'bg-violet-50 text-violet-800 border-violet-200',
@@ -609,10 +610,21 @@ export function ApplicationsPage({
               <textarea
                 value={appForm.notes}
                 onChange={(e) => setAppForm((f) => ({ ...f, notes: e.target.value }))}
-                rows={3}
-                className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"
+                rows={4}
+                className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-mono text-[12px]"
               />
             </label>
+            {extractGmailUrlFromNotes(appForm.notes) ? (
+              <a
+                href={extractGmailUrlFromNotes(appForm.notes)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-700 hover:text-indigo-900"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                Open email in Gmail
+              </a>
+            ) : null}
             <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"

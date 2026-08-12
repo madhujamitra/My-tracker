@@ -4,7 +4,12 @@ import {
   adminClient,
   refreshAccessToken,
 } from '../_shared/google.js'
-import { classifyJobEmail, matchApplication } from '../_shared/classify.js'
+import {
+  classifyJobEmail,
+  matchApplication,
+  isLinkedInConnectionInvite,
+  isLinkedInInMailOrMessage,
+} from '../_shared/classify.js'
 import {
   loadUserAiClient,
   classifyWithLlm,
@@ -22,7 +27,11 @@ const MAX_AI_CALLS = 15
 
 /** Soft rejects often hide past Gmail's short snippet — only fetch body for likely app updates. */
 const APPLICATION_UPDATE_SUBJECT_RE =
-  /\b(your application|application (to|for|update|status)|position:|update on your|thank you for (your )?interest|selection process)\b/i
+  /\b(your application|application (to|for|update|status)|position:|update on your|thank you for (your )?interest|thank you for applying|selection process|after reviewing)\b/i
+
+/** "Thank you for applying" subjects often hide soft rejects past the snippet. */
+const MAYBE_SOFT_REJECT_SUBJECT_RE =
+  /\b(thank you for applying|update on your application|your application to|application (update|status|for))\b/i
 
 function headerValue(headers, name) {
   const h = (headers || []).find(
@@ -128,6 +137,13 @@ async function markProcessed(admin, row) {
   )
 }
 
+/** Marketplace / ATS submission receipts — Applied, never interview. */
+function isClearApplicationReceipt(text) {
+  return /\b(successfully submitted|application (has been )?submitted|you applied today|application to .{1,80} successfully submitted)\b/i.test(
+    String(text || ''),
+  )
+}
+
 /**
  * Create or update application.
  * applied_at = email arrival day; on match, only move earlier (never later).
@@ -148,9 +164,18 @@ async function ensureApplication(
   const roleTrim = role ? String(role).trim() : ''
   if (matched) {
     const nextApplied = earlierIsoDate(matched.applied_at, appliedAt)
-    const nextStatus = status
+    let nextStatus = status
       ? pickForwardStatus(matched.status, status)
       : matched.status
+    // Clear "successfully submitted" receipts must stay Applied — correct prior
+    // mislabels that set Interviewing from Wellfound/Ashby confirmation mail.
+    if (
+      status === 'applied' &&
+      isClearApplicationReceipt(notes) &&
+      matched.status === 'interviewing'
+    ) {
+      nextStatus = 'applied'
+    }
     const patch = {
       last_activity_at: now,
       updated_at: now,
@@ -167,11 +192,37 @@ async function ensureApplication(
       patch.role = roleTrim
       matched.role = roleTrim
     }
+    // Refresh thin "From Gmail" notes with subject + open URL when missing.
+    if (
+      notes &&
+      (!matched.notes ||
+        (/^From Gmail/i.test(matched.notes) &&
+          !/mail\.google\.com/i.test(matched.notes)) ||
+        (isClearApplicationReceipt(notes) &&
+          matched.notes !== notes))
+    ) {
+      patch.notes = notes
+      matched.notes = notes
+    }
     await admin
       .from('applications')
       .update(patch)
       .eq('user_id', userId)
       .eq('id', matched.id)
+
+    if (
+      status === 'applied' &&
+      isClearApplicationReceipt(notes) &&
+      nextStatus === 'applied'
+    ) {
+      // Drop fake interview rows created from the same submission subject.
+      await admin
+        .from('interview_events')
+        .delete()
+        .eq('user_id', userId)
+        .eq('application_id', matched.id)
+        .ilike('title', '%successfully submitted%')
+    }
     return matched
   }
   const insertRow = {
@@ -187,7 +238,7 @@ async function ensureApplication(
   const { data, error } = await admin
     .from('applications')
     .insert(insertRow)
-    .select('id, company, status, applied_at, role')
+    .select('id, company, status, applied_at, role, notes')
     .single()
   if (error) throw error
   apps.push(data)
@@ -248,6 +299,29 @@ async function upsertNeedsReply(admin, userId, mId, subject, snippet, from, date
   )
 }
 
+/** Deep-link into Gmail web (thread id preferred). */
+function gmailWebUrl(threadId, messageId) {
+  const id = threadId || messageId
+  if (!id) return null
+  return `https://mail.google.com/mail/u/0/#all/${id}`
+}
+
+/** Notes that make the source email findable: subject + Open URL (+ short preview). */
+function formatGmailNotes({ subject, snippet, threadId, messageId }) {
+  const lines = ['From Gmail']
+  const subj = String(subject || '').trim()
+  if (subj) lines.push(`Subject: ${subj}`)
+  const url = gmailWebUrl(threadId, messageId)
+  if (url) lines.push(url)
+  const preview = String(snippet || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (preview && preview !== subj) {
+    lines.push(`Preview: ${preview.slice(0, 220)}`)
+  }
+  return lines.join('\n')
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -287,7 +361,7 @@ Deno.serve(async (req) => {
     const messages = listJson.messages || []
     const { data: appsData } = await admin
       .from('applications')
-      .select('id, company, status, applied_at, role')
+      .select('id, company, status, applied_at, role, notes')
       .eq('user_id', user.id)
     const apps = appsData || []
 
@@ -324,6 +398,7 @@ Deno.serve(async (req) => {
       const from = headerValue(headers, 'From')
       const dateHdr = headerValue(headers, 'Date')
       const snippet = msg.snippet || ''
+      const threadId = msg.threadId || m.threadId || null
       const mail = { subject, snippet, from }
       const appliedAt = dateHdr
         ? emailDateToIsoDate(dateHdr)
@@ -331,11 +406,25 @@ Deno.serve(async (req) => {
 
       let classified = classifyJobEmail(mail)
 
-      // Short Gmail snippets often stop before soft-reject lines ("other candidates").
-      if (!classified && APPLICATION_UPDATE_SUBJECT_RE.test(subject)) {
+      // LinkedIn connection invites are noise — never send to AI / never create apps.
+      if (!classified && isLinkedInConnectionInvite(mail)) {
+        summary.skipped += 1
+        continue
+      }
+
+      const linkedInMsg = isLinkedInInMailOrMessage(mail)
+
+      // Soft-reject body excerpt OR LinkedIn InMail body for AI context.
+      // Also re-check "thank you for applying" applied hits — soft rejects hide past snippet.
+      if (
+        (!classified && APPLICATION_UPDATE_SUBJECT_RE.test(subject)) ||
+        (classified?.kind === 'new_application' &&
+          MAYBE_SOFT_REJECT_SUBJECT_RE.test(subject)) ||
+        (linkedInMsg && aiClient && !aiDisabledForRun)
+      ) {
         try {
           const excerpt = await fetchBodyExcerpt(accessToken, m.id)
-          if (excerpt && excerpt.length > snippet.length + 40) {
+          if (excerpt && excerpt.length > String(mail.snippet || '').length + 40) {
             mail.snippet = `${snippet} ${excerpt}`.trim()
             classified = classifyJobEmail(mail)
           }
@@ -344,16 +433,31 @@ Deno.serve(async (req) => {
         }
       }
 
-      if (
-        !classified &&
+      // Keep notes preview aligned with the text we actually classified on.
+      const sourceNotes = formatGmailNotes({
+        subject,
+        snippet: mail.snippet || snippet,
+        threadId,
+        messageId: m.id,
+      })
+
+      // Prefer AI for LinkedIn InMail/message context; otherwise AI only on heuristic miss.
+      const wantAi =
         aiClient &&
         !aiDisabledForRun &&
-        summary.ai_calls < MAX_AI_CALLS
-      ) {
+        summary.ai_calls < MAX_AI_CALLS &&
+        (linkedInMsg || !classified) &&
+        // Never spend AI (or let it override) on clear submission receipts.
+        !isClearApplicationReceipt(`${subject} ${mail.snippet || snippet}`)
+
+      if (wantAi) {
         summary.ai_calls += 1
         try {
-          classified = await classifyWithLlm(mail, aiClient)
-          if (classified) summary.ai_hits += 1
+          const llmHit = await classifyWithLlm(mail, aiClient)
+          if (llmHit) {
+            classified = llmHit
+            summary.ai_hits += 1
+          }
         } catch (llmErr) {
           summary.ai_errors += 1
           console.error('LLM classify failed', llmErr)
@@ -364,6 +468,34 @@ Deno.serve(async (req) => {
           ) {
             aiDisabledForRun = true
           }
+        }
+      }
+
+      // Safety: never promote LinkedIn connection / InMail to interview via AI slip.
+      if (
+        classified?.kind === 'interview_event' &&
+        (isLinkedInConnectionInvite(mail) || isLinkedInInMailOrMessage(mail))
+      ) {
+        classified = classifyJobEmail(mail) || {
+          kind: 'needs_reply',
+          proposed_status: 'opportunity',
+          proposed_company: classified.proposed_company || null,
+          proposed_title: subject || 'LinkedIn message',
+          awaiting_candidate_reply: true,
+        }
+      }
+
+      // Safety: submission receipts are Applied, never interview.
+      if (
+        classified?.kind === 'interview_event' &&
+        isClearApplicationReceipt(`${subject} ${mail.snippet || snippet}`)
+      ) {
+        classified = classifyJobEmail(mail) || {
+          kind: 'new_application',
+          proposed_status: 'applied',
+          proposed_company: classified.proposed_company || null,
+          proposed_title: subject || 'Application submitted',
+          awaiting_candidate_reply: false,
         }
       }
 
@@ -407,6 +539,40 @@ Deno.serve(async (req) => {
             apps,
           )
           if (fixed) summary.dates_corrected += 1
+          // Backfill subject + Gmail URL onto thin notes from older syncs.
+          const mem = apps.find((a) => a.id === appId)
+          if (
+            sourceNotes &&
+            (!mem?.notes ||
+              (/^From Gmail/i.test(mem.notes) &&
+                !/mail\.google\.com/i.test(mem.notes)))
+          ) {
+            await admin
+              .from('applications')
+              .update({
+                notes: sourceNotes,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('user_id', user.id)
+              .eq('id', appId)
+            if (mem) mem.notes = sourceNotes
+          }
+          // Re-apply clear submission receipts so Interviewing mislabels get corrected.
+          if (
+            classified.kind === 'new_application' &&
+            isClearApplicationReceipt(`${subject} ${mail.snippet || snippet}`)
+          ) {
+            await ensureApplication(
+              admin,
+              user.id,
+              apps,
+              classified.proposed_company || mem?.company || 'Unknown company',
+              'applied',
+              sourceNotes,
+              appliedAt,
+              classified.proposed_role,
+            )
+          }
         }
         summary.skipped += 1
         continue
@@ -436,7 +602,7 @@ Deno.serve(async (req) => {
             apps,
             company,
             'opportunity',
-            `From Gmail: ${subject}`,
+            sourceNotes,
             appliedAt,
             classified.proposed_role,
           )
@@ -463,7 +629,7 @@ Deno.serve(async (req) => {
             apps,
             company,
             'applied',
-            `From Gmail: ${subject}`,
+            sourceNotes,
             appliedAt,
             classified.proposed_role,
           )
@@ -491,7 +657,7 @@ Deno.serve(async (req) => {
             apps,
             company,
             status,
-            `From Gmail: ${subject}`,
+            sourceNotes,
             appliedAt,
           )
           audit.application_id = app.id
@@ -510,14 +676,14 @@ Deno.serve(async (req) => {
             apps,
             company,
             'interviewing',
-            `From Gmail: ${subject}`,
+            sourceNotes,
             appliedAt,
           )
           const starts = parseInviteStartsAt({ subject, snippet })
           audit.proposed_starts_at = starts
           const { data: existingEv } = await admin
             .from('interview_events')
-            .select('id')
+            .select('id, notes')
             .eq('user_id', user.id)
             .eq('application_id', app.id)
             .eq('title', classified.proposed_title || subject || 'Interview')
@@ -529,8 +695,17 @@ Deno.serve(async (req) => {
               title: classified.proposed_title || subject || 'Interview',
               event_type: 'interview',
               starts_at: starts,
-              notes: snippet || null,
+              notes: sourceNotes,
             })
+          } else if (
+            !existingEv.notes ||
+            !/mail\.google\.com/i.test(existingEv.notes)
+          ) {
+            await admin
+              .from('interview_events')
+              .update({ notes: sourceNotes })
+              .eq('id', existingEv.id)
+              .eq('user_id', user.id)
           }
           audit.application_id = app.id
           await markProcessed(admin, audit)
@@ -543,7 +718,7 @@ Deno.serve(async (req) => {
               apps,
               company,
               'opportunity',
-              `From Gmail: ${subject}`,
+              sourceNotes,
               appliedAt,
               classified.proposed_role,
             )

@@ -196,6 +196,69 @@ describe('gmailClassify', () => {
     assert.equal(r, null)
   })
 
+  it('LinkedIn connection invite → ignore (not interview)', () => {
+    const r = classifyJobEmail({
+      subject: 'You have an invitation ✉️',
+      snippet:
+        'Shubham Thakur Data Engineer @ Blend | PySpark • SQL Accept View profile 1 connection in common People you may know',
+      from: 'Shubham Thakur <invitations@linkedin.com>',
+    })
+    assert.equal(r, null)
+  })
+
+  it('LinkedIn InMail recruiter outreach → opportunity + needs reply', () => {
+    const r = classifyJobEmail({
+      subject:
+        "We're Going AI-First! Help Build the Future of Global Insurtech - Join Cover Genius!",
+      snippet:
+        'Learn about a new opportunity. Hi Madhuja, I came across your background and thought you could be a great fit for our Senior Software Engineer role at Cover Genius.',
+      from: 'Haira Nica Gonzales <inmail-hit-reply@linkedin.com>',
+    })
+    assert.equal(r.kind, 'new_opportunity')
+    assert.equal(r.proposed_status, 'opportunity')
+    assert.equal(r.proposed_company, 'Cover Genius')
+    assert.equal(r.awaiting_candidate_reply, true)
+  })
+
+  it('LinkedIn message asking for resume → opportunity/needs reply (not interview)', () => {
+    const r = classifyJobEmail({
+      subject: 'Message replied: Exciting opportunity for a software engineer',
+      snippet:
+        'InMail: You have a new message. Thank you for your reply. Please send me your resume if you are interested. Rex',
+      from: 'Rex To <hit-reply@linkedin.com>',
+    })
+    assert.ok(r)
+    assert.notEqual(r.kind, 'interview_event')
+    assert.equal(r.proposed_status, 'opportunity')
+    assert.equal(r.awaiting_candidate_reply, true)
+  })
+
+  it('Wellfound / Liftoff submission receipt → applied (not interview)', () => {
+    const r = classifyJobEmail({
+      subject: 'Application to Liftoff successfully submitted',
+      snippet:
+        "Your application has been submitted! If there's a match, we will make an email introduction. Full Stack Product Engineer Liftoff · Montreal $70-110K You applied today You should hear",
+      from: 'Wellfound <noreply@wellfound.com>',
+    })
+    assert.equal(r.kind, 'new_application')
+    assert.equal(r.proposed_status, 'applied')
+    assert.equal(r.proposed_company, 'Liftoff')
+    assert.notEqual(r.kind, 'interview_event')
+  })
+
+  it('DarioHealth soft rejection → rejected (not applied)', () => {
+    const r = classifyJobEmail({
+      subject:
+        'Thank you for applying for the Associate Software Developer position at DarioHealth',
+      snippet:
+        'Madhuja Thank you for submitting your resume for the Associate Software Developer position at DarioHealth. After reviewing your experience and qualifications, we decided to move forward with other candidates. We wish you the best in your job search and invite you to regularly check our careers page for other openings.',
+      from: 'DarioHealth <no-reply@careers.mydario.com>',
+    })
+    assert.equal(r.kind, 'status_update')
+    assert.equal(r.proposed_status, 'rejected')
+    assert.equal(r.proposed_company, 'DarioHealth')
+  })
+
   it('matchApplication finds exact company', () => {
     const hit = matchApplication([{ id: 1, company: 'Vistera' }], 'Vistera')
     assert.equal(hit.id, 1)
