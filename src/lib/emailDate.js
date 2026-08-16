@@ -67,27 +67,46 @@ export function earlierIsoDate(a, b) {
 
 /**
  * Best-effort interview start from Gmail invite subject/snippet.
+ * Prefer the latest message text (booked/scheduled lines), not older quotes.
  */
 export function parseInviteStartsAt(text = {}, fallbackMs = Date.now() + 86400000) {
   const raw = `${text.subject || ''} ${text.snippet || ''}`
+  const months = {
+    jan: 0,
+    feb: 1,
+    mar: 2,
+    apr: 3,
+    may: 4,
+    jun: 5,
+    jul: 6,
+    aug: 7,
+    sep: 8,
+    oct: 9,
+    nov: 10,
+    dec: 11,
+  }
+
+  // "Thursday, August 13, 2026, at 11:30 AM PST"
+  const booked = raw.match(
+    /\b(?:booked|scheduled).{0,40}?(?:for\s+)?(?:[A-Za-z]+,\s+)?([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4}).{0,20}?(\d{1,2}):(\d{2})\s*(am|pm)\b/i,
+  )
+  if (booked) {
+    const mon = months[booked[1].toLowerCase().slice(0, 3)]
+    if (mon != null) {
+      let hour = Number(booked[4])
+      const min = Number(booked[5])
+      const ap = booked[6].toLowerCase()
+      if (ap === 'pm' && hour < 12) hour += 12
+      if (ap === 'am' && hour === 12) hour = 0
+      const d = new Date(Number(booked[3]), mon, Number(booked[2]), hour, min, 0, 0)
+      if (!Number.isNaN(d.getTime())) return d.toISOString()
+    }
+  }
+
   const m = raw.match(
     /@\s*(?:[A-Za-z]{3}\s+)?([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{4})\s+(\d{1,2}):(\d{2})\s*(am|pm)/i,
   )
   if (m) {
-    const months = {
-      jan: 0,
-      feb: 1,
-      mar: 2,
-      apr: 3,
-      may: 4,
-      jun: 5,
-      jul: 6,
-      aug: 7,
-      sep: 8,
-      oct: 9,
-      nov: 10,
-      dec: 11,
-    }
     const mon = months[m[1].toLowerCase().slice(0, 3)]
     if (mon != null) {
       let hour = Number(m[4])

@@ -20,7 +20,10 @@ import {
   internalDateToIsoDate,
   parseInviteStartsAt,
 } from '../_shared/emailDate.js'
-import { pickForwardStatus } from '../_shared/pipelineStatus.js'
+import {
+  computeApplicationSyncPatch,
+  isClearApplicationReceipt,
+} from '../_shared/syncApplicationPatch.js'
 
 /** Cap LLM calls per sync — cost + latency bound. */
 const MAX_AI_CALLS = 15
@@ -137,16 +140,10 @@ async function markProcessed(admin, row) {
   )
 }
 
-/** Marketplace / ATS submission receipts — Applied, never interview. */
-function isClearApplicationReceipt(text) {
-  return /\b(successfully submitted|application (has been )?submitted|you applied today|application to .{1,80} successfully submitted)\b/i.test(
-    String(text || ''),
-  )
-}
-
 /**
  * Create or update application.
  * applied_at = email arrival day; on match, only move earlier (never later).
+ * User-locked status is never overwritten.
  */
 async function ensureApplication(
   admin,
@@ -163,59 +160,24 @@ async function ensureApplication(
   const now = new Date().toISOString()
   const roleTrim = role ? String(role).trim() : ''
   if (matched) {
-    const nextApplied = earlierIsoDate(matched.applied_at, appliedAt)
-    let nextStatus = status
-      ? pickForwardStatus(matched.status, status)
-      : matched.status
-    // Clear "successfully submitted" receipts must stay Applied — correct prior
-    // mislabels that set Interviewing from Wellfound/Ashby confirmation mail.
-    if (
-      status === 'applied' &&
-      isClearApplicationReceipt(notes) &&
-      matched.status === 'interviewing'
-    ) {
-      nextStatus = 'applied'
-    }
-    const patch = {
-      last_activity_at: now,
-      updated_at: now,
-    }
-    if (nextStatus && nextStatus !== matched.status) {
-      patch.status = nextStatus
-      matched.status = nextStatus
-    }
-    if (nextApplied && nextApplied !== matched.applied_at) {
-      patch.applied_at = nextApplied
-      matched.applied_at = nextApplied
-    }
-    if (roleTrim && !matched.role) {
-      patch.role = roleTrim
-      matched.role = roleTrim
-    }
-    // Refresh thin "From Gmail" notes with subject + open URL when missing.
-    if (
-      notes &&
-      (!matched.notes ||
-        (/^From Gmail/i.test(matched.notes) &&
-          !/mail\.google\.com/i.test(matched.notes)) ||
-        (isClearApplicationReceipt(notes) &&
-          matched.notes !== notes))
-    ) {
-      patch.notes = notes
-      matched.notes = notes
-    }
+    const patch = computeApplicationSyncPatch(matched, {
+      status,
+      notes,
+      appliedAt,
+      role: roleTrim,
+      now,
+    })
+    if (!patch) return matched
+
     await admin
       .from('applications')
       .update(patch)
       .eq('user_id', userId)
       .eq('id', matched.id)
 
-    if (
-      status === 'applied' &&
-      isClearApplicationReceipt(notes) &&
-      nextStatus === 'applied'
-    ) {
-      // Drop fake interview rows created from the same submission subject.
+    Object.assign(matched, patch)
+
+    if (patch.status === 'applied' && isClearApplicationReceipt(notes)) {
       await admin
         .from('interview_events')
         .delete()
@@ -229,6 +191,7 @@ async function ensureApplication(
     user_id: userId,
     company: name,
     status: status || 'applied',
+    status_source: 'sync',
     applied_at: appliedAt || now.slice(0, 10),
     last_activity_at: now,
     notes: notes || null,
@@ -238,7 +201,7 @@ async function ensureApplication(
   const { data, error } = await admin
     .from('applications')
     .insert(insertRow)
-    .select('id, company, status, applied_at, role, notes')
+    .select('id, company, status, applied_at, role, notes, status_source')
     .single()
   if (error) throw error
   apps.push(data)
@@ -342,13 +305,19 @@ Deno.serve(async (req) => {
     const accessToken = await ensureAccessToken(admin, conn)
     const aiClient = await loadUserAiClient(admin, user.id)
 
+    // Bare terms search subject+body. subject:(interview) alone misses
+    // "Cover Genius: Senior Software Engineer…" threads.
     const q =
-      'newer_than:7d (label:job-tracker OR subject:(application OR interview OR invitation OR Invitation OR screening OR opportunity OR Opportunities OR interested OR resume OR recruiters OR unfortunately OR "thank you for applying" OR "received your application" OR "looking forward" OR "please reply" OR "please confirm" OR RSVP OR offer OR acknowledgement OR acknowledgment))'
+      'newer_than:7d (' +
+      'label:job-tracker OR ' +
+      'subject:(application OR interview OR invitation OR Invitation OR screening OR opportunity OR Opportunities OR interested OR resume OR recruiters OR unfortunately OR "thank you for applying" OR "received your application" OR "looking forward" OR "please reply" OR "please confirm" OR RSVP OR offer OR acknowledgement OR acknowledgment) OR ' +
+      'interview OR "interview process" OR "next stage" OR "schedule a" OR "scheduling link" OR "move you forward" OR "other candidates" OR "successfully submitted" OR "Talent Acquisition" OR "booked our call" OR Calendly' +
+      ')'
     const listUrl = new URL(
       'https://gmail.googleapis.com/gmail/v1/users/me/messages',
     )
     listUrl.searchParams.set('q', q)
-    listUrl.searchParams.set('maxResults', '50')
+    listUrl.searchParams.set('maxResults', '100')
 
     const listRes = await fetch(listUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -361,7 +330,7 @@ Deno.serve(async (req) => {
     const messages = listJson.messages || []
     const { data: appsData } = await admin
       .from('applications')
-      .select('id, company, status, applied_at, role, notes')
+      .select('id, company, status, applied_at, role, notes, status_source')
       .eq('user_id', user.id)
     const apps = appsData || []
 
@@ -509,71 +478,11 @@ Deno.serve(async (req) => {
         .select('id, status, application_id, proposed_company, kind')
         .eq('user_id', user.id)
         .eq('gmail_message_id', m.id)
-        .eq('kind', classified.kind)
+        .in('status', ['applied', 'accepted'])
+        .limit(1)
         .maybeSingle()
-      if (
-        existing &&
-        (existing.status === 'applied' || existing.status === 'accepted')
-      ) {
-        // Already applied — still fix wrong sync-day applied_at from this email
-        let appId = existing.application_id
-        if (!appId && existing.proposed_company) {
-          const hit = matchApplication(apps, existing.proposed_company)
-          appId = hit?.id || null
-        }
-        if (!appId && classified.proposed_company) {
-          const hit = matchApplication(apps, classified.proposed_company)
-          appId = hit?.id || null
-        }
-        if (
-          appId &&
-          ['new_application', 'status_update', 'interview_event'].includes(
-            classified.kind,
-          )
-        ) {
-          const fixed = await backfillAppliedAt(
-            admin,
-            user.id,
-            appId,
-            appliedAt,
-            apps,
-          )
-          if (fixed) summary.dates_corrected += 1
-          // Backfill subject + Gmail URL onto thin notes from older syncs.
-          const mem = apps.find((a) => a.id === appId)
-          if (
-            sourceNotes &&
-            (!mem?.notes ||
-              (/^From Gmail/i.test(mem.notes) &&
-                !/mail\.google\.com/i.test(mem.notes)))
-          ) {
-            await admin
-              .from('applications')
-              .update({
-                notes: sourceNotes,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('user_id', user.id)
-              .eq('id', appId)
-            if (mem) mem.notes = sourceNotes
-          }
-          // Re-apply clear submission receipts so Interviewing mislabels get corrected.
-          if (
-            classified.kind === 'new_application' &&
-            isClearApplicationReceipt(`${subject} ${mail.snippet || snippet}`)
-          ) {
-            await ensureApplication(
-              admin,
-              user.id,
-              apps,
-              classified.proposed_company || mem?.company || 'Unknown company',
-              'applied',
-              sourceNotes,
-              appliedAt,
-              classified.proposed_role,
-            )
-          }
-        }
+      if (existing) {
+        // Apply-once per Gmail message — never rewrite the board on re-sync.
         summary.skipped += 1
         continue
       }

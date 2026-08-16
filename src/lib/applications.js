@@ -9,6 +9,7 @@ export const APPLICATION_STATUSES = [
   { value: 'rejected', label: 'Rejected' },
   { value: 'not_selected', label: 'Not selected' },
   { value: 'withdrawn', label: 'Withdrawn' },
+  { value: 'not_a_job', label: 'Not a job' },
 ]
 
 export const EVENT_TYPES = [
@@ -42,6 +43,8 @@ export async function createApplication(userId, fields) {
     company: String(fields.company || '').trim(),
     role: fields.role?.trim() || null,
     status: fields.status || 'applied',
+    status_source: 'user',
+    status_locked_at: now,
     applied_at: fields.applied_at || now.slice(0, 10),
     last_activity_at: now,
     notes: fields.notes?.trim() || null,
@@ -79,6 +82,10 @@ export async function updateApplication(userId, id, fields) {
       patch[key] =
         typeof fields[key] === 'string' ? fields[key].trim() || null : fields[key]
     }
+  }
+  if (fields.status !== undefined) {
+    patch.status_source = 'user'
+    patch.status_locked_at = now
   }
   if (patch.company === null || patch.company === '') {
     throw new Error('Company is required')

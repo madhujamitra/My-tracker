@@ -36,7 +36,7 @@ import {
   Video,
   PartyPopper,
 } from 'lucide-react';
-import { classifyItem, isCellDone, sortQueueItems } from './itemClassify.js';
+import { classifyItem, isCellDone, normalizeRecurrence, sortQueueItems } from './itemClassify.js';
 import { TimerPage } from './features/TimerPage.jsx';
 import { TimeControl } from './features/TimeControl.jsx';
 import { FocusMode } from './features/FocusMode.jsx';
@@ -123,6 +123,10 @@ function App({
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskType, setNewTaskType] = useState('todo');
   const [newTaskPriority, setNewTaskPriority] = useState('Normal');
+  const [newTaskRecurrence, setNewTaskRecurrence] = useState('none'); // none | weekly | biweekly | scheduled
+  const [newTaskDueDate, setNewTaskDueDate] = useState(() =>
+    localISODate(new Date(liveYear, liveMonthIndex, todayDay)),
+  );
   const [quickInput, setQuickInput] = useState('');
 
   const [editingIndex, setEditingIndex] = useState(null);
@@ -324,8 +328,10 @@ function App({
     const itemType = stored.itemType || 'todo';
     const priority = stored.priority || 'Normal';
     const createdDay = stored.createdDay ?? 1;
+    const recurrence = normalizeRecurrence(stored.recurrence);
+    const dueDate = stored.dueDate || null;
 
-    return { itemType, priority, createdDay };
+    return { itemType, priority, createdDay, recurrence, dueDate };
   };
 
   const setTaskPriority = (itemIndex, priority) => {
@@ -451,6 +457,7 @@ function App({
         itemType: 'todo',
         createdDay,
         refDay: selectedTargetDay,
+        recurrence: stored.recurrence,
       });
       return !classified.isClosed;
     }).length;
@@ -481,11 +488,21 @@ function App({
     parsed.taskRows.forEach(item => {
       const title = String(item.row?.[0] || 'Untitled').trim();
       const meta = getTaskMeta(item);
+      if (
+        meta.recurrence === 'scheduled' &&
+        meta.dueDate &&
+        !String(meta.dueDate).startsWith(
+          `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`,
+        )
+      ) {
+        return;
+      }
       const classified = classifyItem({
         row: item.row,
         itemType: meta.itemType,
         createdDay: meta.createdDay,
         refDay,
+        recurrence: meta.recurrence,
       });
 
       if (!classified.includeInQueue) return;
@@ -503,13 +520,15 @@ function App({
         missedDay: classified.missedDay,
         statusLabel: classified.statusLabel,
         isClosed: classified.isClosed,
+        recurrence: classified.recurrence || meta.recurrence,
+        periodStart: classified.periodStart,
         refDay,
       });
     });
 
     list.sort(sortQueueItems);
     return list;
-  }, [parsed.taskRows, selectedTargetDay, todoPriorityFilter, todoTypeFilter, searchQuery, taskMetaMap]);
+  }, [parsed.taskRows, selectedTargetDay, selectedMonthIndex, selectedYear, todoPriorityFilter, todoTypeFilter, searchQuery, taskMetaMap]);
 
   // Completed tasks only (past + today) — derived from sheet cells, no extra DB table
   const completedTasks = useMemo(() => {
@@ -526,6 +545,7 @@ function App({
         itemType: 'todo',
         createdDay: meta.createdDay,
         refDay,
+        recurrence: meta.recurrence,
       });
 
       if (!classified.isClosed || !classified.completedOn) return;
@@ -593,8 +613,33 @@ function App({
   };
 
   // Add task handler
-  const handleAddTasks = (rawInput, defaultType = 'todo', defaultPriority = 'Normal') => {
+  const handleAddTasks = (
+    rawInput,
+    defaultType = 'todo',
+    defaultPriority = 'Normal',
+    options = {},
+  ) => {
     if (!rawInput || !rawInput.trim()) return;
+    const recurrence =
+      defaultType === 'habit' ? 'none' : normalizeRecurrence(options.recurrence);
+
+    let createdDay = selectedTargetDay;
+    let dueDate = null;
+    if (defaultType === 'todo' && recurrence === 'scheduled') {
+      const raw = String(options.dueDate || '').trim();
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+      if (match) {
+        dueDate = raw;
+        createdDay = Math.max(1, Math.min(31, Number(match[3]) || selectedTargetDay));
+        const dueYear = Number(match[1]);
+        const dueMonthIndex = Number(match[2]) - 1;
+        if (dueYear !== selectedYear || dueMonthIndex !== selectedMonthIndex) {
+          setSelectedYear(dueYear);
+          setSelectedMonthIndex(dueMonthIndex);
+        }
+      }
+    }
+
     const items = rawInput.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
     items.forEach(name => {
       const newRow = new Array(34).fill(null);
@@ -610,7 +655,9 @@ function App({
         [name]: {
           itemType: defaultType,
           priority: defaultPriority,
-          createdDay: selectedTargetDay,
+          createdDay,
+          recurrence,
+          ...(dueDate ? { dueDate } : {}),
         }
       }));
     });
@@ -1168,6 +1215,10 @@ function App({
               <button
                 onClick={() => {
                   setNewTaskType('todo');
+                  setNewTaskRecurrence('none');
+                  setNewTaskDueDate(
+                    localISODate(new Date(selectedYear, selectedMonthIndex, selectedTargetDay)),
+                  );
                   setIsAddModalOpen(true);
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl transition shadow-sm"
@@ -1243,7 +1294,7 @@ function App({
                       </td>
                     </tr>
                   ) : (
-                    queueTasks.map(({ item, title, priority, itemType, isDoneToday, isRolledOver, missedDay, refDay, statusLabel, isClosed }) => {
+                    queueTasks.map(({ item, title, priority, itemType, isDoneToday, isRolledOver, missedDay, refDay, statusLabel, isClosed, recurrence }) => {
                       const timerRunning = timers.isRunning(item.index_);
                       const taskCompleted = itemType === 'todo' && (isDoneToday || isClosed);
                       const rowBg = timerRunning
@@ -1255,6 +1306,15 @@ function App({
                         : isDoneToday
                         ? 'bg-slate-100/80'
                         : 'hover:bg-slate-50/80';
+
+                      const recurrenceHint =
+                        recurrence === 'weekly'
+                          ? 'Weekly'
+                          : recurrence === 'biweekly'
+                          ? 'Bi-weekly'
+                          : recurrence === 'scheduled'
+                          ? 'Scheduled'
+                          : null;
 
                       return (
                         <tr key={item.index_} className={`transition ${rowBg}`}>
@@ -1327,13 +1387,21 @@ function App({
                             ) : statusLabel === 'missed' || isRolledOver ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 flex items-center gap-1 w-fit">
                                 <AlertCircle className="w-3 h-3 text-amber-700" /> Pending (Day {missedDay})
+                                {recurrenceHint ? (
+                                  <span className="font-semibold text-amber-800/80">· {recurrenceHint}</span>
+                                ) : null}
                               </span>
                             ) : isDoneToday ? (
                               <span className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
                                 <CheckCircle2 className="w-3 h-3" /> Completed
+                                {recurrenceHint ? (
+                                  <span className="font-medium text-emerald-800/70">· {recurrenceHint}</span>
+                                ) : null}
                               </span>
                             ) : (
-                              <span className="text-[11px] text-slate-500 font-medium">Due today</span>
+                              <span className="text-[11px] text-slate-500 font-medium">
+                                {recurrenceHint ? `${recurrenceHint} · Due today` : 'Due today'}
+                              </span>
                             )}
                           </td>
 
@@ -1875,8 +1943,15 @@ function App({
               <form 
                 onSubmit={(e) => {
                   e.preventDefault();
-                  handleAddTasks(newTaskTitle, newTaskType, newTaskPriority);
+                  handleAddTasks(newTaskTitle, newTaskType, newTaskPriority, {
+                    recurrence: newTaskType === 'todo' ? newTaskRecurrence : 'none',
+                    dueDate: newTaskDueDate,
+                  });
                   setNewTaskTitle('');
+                  setNewTaskRecurrence('none');
+                  setNewTaskDueDate(
+                    localISODate(new Date(selectedYear, selectedMonthIndex, selectedTargetDay)),
+                  );
                   setIsAddModalOpen(false);
                 }} 
                 className="py-4 space-y-3"
@@ -1902,7 +1977,11 @@ function App({
                     </label>
                     <select
                       value={newTaskType}
-                      onChange={(e) => setNewTaskType(e.target.value)}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setNewTaskType(next);
+                        if (next === 'habit') setNewTaskRecurrence('none');
+                      }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800"
                     >
                       <option value="todo">Task (rolls if missed)</option>
@@ -1925,6 +2004,47 @@ function App({
                     </select>
                   </div>
                 </div>
+
+                {newTaskType === 'todo' && (
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Recurrence
+                    </label>
+                    <select
+                      value={newTaskRecurrence}
+                      onChange={(e) => setNewTaskRecurrence(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800"
+                    >
+                      <option value="none">One-time (due today, rolls if missed)</option>
+                      <option value="weekly">Weekly (every 7 days)</option>
+                      <option value="biweekly">Bi-weekly (every 14 days)</option>
+                      <option value="scheduled">Specific date (advance)</option>
+                    </select>
+
+                    {newTaskRecurrence === 'scheduled' ? (
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Due date
+                        </label>
+                        <input
+                          type="date"
+                          value={newTaskDueDate}
+                          min={localISODate()}
+                          onChange={(e) => setNewTaskDueDate(e.target.value || localISODate())}
+                          className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800"
+                        />
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          Hidden until that day, then rolls like a normal task until done.
+                        </p>
+                      </div>
+                    ) : newTaskRecurrence === 'weekly' || newTaskRecurrence === 'biweekly' ? (
+                      <p className="text-[10px] text-slate-500">
+                        Starts {currentMonth.name.slice(0, 3)} {selectedTargetDay}. Completing closes this cycle;
+                        it returns on the next {newTaskRecurrence === 'weekly' ? 'week' : '2 weeks'}. Misses roll until done.
+                      </p>
+                    ) : null}
+                  </div>
+                )}
 
                 <div className="flex justify-end gap-2 pt-2">
                   <button

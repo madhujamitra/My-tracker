@@ -23,7 +23,11 @@ const ASSESSMENT_RE =
   /\b(online (coding )?assessment|coding assessment|take[- ]home (assignment|test|challenge)|hackerrank|codility|codesignal|technical assessment)\b/i
 
 const INTERVIEW_RE =
-  /\b(interview|phone screen|recruiter screen|screening call|video (call|interview)|schedule (a |an )?(call|interview|chat|screen)|meet(ing)? with|onsite|on-site|initial screening|final (interview )?round)\b/i
+  /\b(interview|phone screen|recruiter screen|screening call|video (call|interview)|schedule (a |an )?(call|interview|chat|screen)|schedule .{0,40}\b(call|interview|chat|screen)\b|meet(ing)? with|onsite|on-site|initial screening|final (interview )?round|next stage of (our |the )?interview|20[- ]minute call|scheduling link)\b/i
+
+/** Latest mail says the call/interview is already booked — still interviewing. */
+const INTERVIEW_SCHEDULED_RE =
+  /\b(interview is scheduled|call is scheduled|(have |i have )?booked (our |the )?(call|interview)|booked (our |the )?(call|interview) for|scheduled (our |the |for )?(call|interview)|looking forward to (speaking|chatting) with you then)\b/i
 
 const CALENDAR_INVITE_RE =
   /\b(invitation:|invitation from|updated invitation:|canceled event:|cancelled event:|calendar notification|you('ve| have) been invited|join (with )?google meet|zoom meeting invitation)\b/i
@@ -134,6 +138,20 @@ export function guessCompany(msg = {}) {
     const c = cleanCompany(appTo[1])
     // Employer from subject — do not treat single-token brands as person names.
     if (c) return c
+  }
+
+  // "Cover Genius: Senior Software Engineer …"
+  const colonLead = subject.match(
+    /^([A-Z][A-Za-z0-9&.\-]+(?:\s+[A-Z][A-Za-z0-9&.\-]+){0,3})\s*:\s+/,
+  )
+  if (colonLead) {
+    const c = cleanCompany(colonLead[1])
+    if (
+      c &&
+      !/\b(Re|Fw|Fwd|Interview|Application|Update|Invitation)\b/i.test(c)
+    ) {
+      return c
+    }
   }
 
   // "… Associate Software Developer position at DarioHealth" (subject only)
@@ -276,6 +294,8 @@ function withAwaiting(result, text) {
 
 /**
  * @param {{ subject?: string, snippet?: string, from?: string }} msg
+ * Classify from this message's snippet (the mail being synced — latest arriving
+ * context), not older quoted replies in a thread.
  */
 export function classifyJobEmail(msg = {}) {
   const text = `${msg.subject || ''} ${msg.snippet || ''}`
@@ -436,7 +456,9 @@ export function classifyJobEmail(msg = {}) {
 
   if (
     !isLinkedInMail(msg) &&
-    (CALENDAR_INVITE_RE.test(text) || INTERVIEW_RE.test(text))
+    (CALENDAR_INVITE_RE.test(text) ||
+      INTERVIEW_SCHEDULED_RE.test(text) ||
+      INTERVIEW_RE.test(text))
   ) {
     return withAwaiting(
       {
@@ -444,13 +466,21 @@ export function classifyJobEmail(msg = {}) {
         proposed_status: 'interviewing',
         proposed_company: company,
         proposed_title: msg.subject || 'Interview',
+        // Already booked → not waiting on candidate to pick a slot
+        awaiting_candidate_reply: INTERVIEW_SCHEDULED_RE.test(text)
+          ? false
+          : undefined,
       },
       text,
     )
   }
 
   // Non-InMail LinkedIn mail that still mentions an interview (rare) — allow.
-  if (isLinkedInMail(msg) && INTERVIEW_RE.test(text) && !isLinkedInInMailOrMessage(msg)) {
+  if (
+    isLinkedInMail(msg) &&
+    (INTERVIEW_SCHEDULED_RE.test(text) || INTERVIEW_RE.test(text)) &&
+    !isLinkedInInMailOrMessage(msg)
+  ) {
     return withAwaiting(
       {
         kind: 'interview_event',

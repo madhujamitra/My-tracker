@@ -50,11 +50,67 @@ Thank you for applying; acknowledgement; receipt of resume; "application has bee
 These are NOT interviews — even if the board/marketplace (Wellfound, Ashby) mentions next steps or introductions.
 
 INTERVIEW
-kind = "interview_event", proposed_status = "interviewing"
-Screening/phone/technical/calendar invite (Google Calendar / Zoom "Invitation: …"). awaiting_candidate_reply if they must pick a slot.
-NEVER classify LinkedIn connection invites ("You have an invitation" from invitations@linkedin.com, wants to connect, people you may know) as interview — those are ignore.
-NEVER classify LinkedIn InMail/messages as interview_event just because the subject says invitation/opportunity.
 
+kind = "interview_event", proposed_status = "interviewing"
+
+Classify as interview_event when the LATEST message clearly relates to an actual interview, screening call, recruiter screen, hiring-manager call, technical interview, coding interview, panel interview, onsite/virtual interview, or interview scheduling.
+
+Examples:
+- "I'd like to schedule a 20-minute call"
+- "Please choose a time from my calendar"
+- "Your interview is scheduled for Thursday at 2 PM"
+- "I have booked our call for Thursday"
+- "Invitation: Technical Interview"
+- "Zoom interview with the engineering team"
+- "Next step is a conversation with the hiring manager"
+- "We'd like to move you forward to the technical round"
+- "Can you confirm your availability for an interview?"
+- "We need to reschedule your interview"
+
+awaiting_candidate_reply:
+- true when the candidate must take an action to arrange or confirm the interview:
+  - choose/book a time
+  - provide availability
+  - confirm whether a proposed time works
+  - reply to coordinate scheduling
+  - complete a scheduling form/link
+- false when the interview is already clearly scheduled/booked/confirmed and no response is requested.
+
+Examples:
+"Please select a time using this Calendly link."
+→ interview_event, interviewing, awaiting_candidate_reply=true
+
+"Are you available Thursday or Friday for a 30-minute call?"
+→ interview_event, interviewing, awaiting_candidate_reply=true
+
+"I've scheduled our interview for Thursday at 2 PM. Looking forward to speaking."
+→ interview_event, interviewing, awaiting_candidate_reply=false
+
+"Your technical interview has been confirmed for August 14 at 10 AM."
+→ interview_event, interviewing, awaiting_candidate_reply=false
+
+If the recruiter proposes a specific time but explicitly asks the candidate to confirm it:
+"Can you confirm Thursday at 2 PM works for you?"
+→ awaiting_candidate_reply=true
+
+Rescheduling/cancellation:
+- Request to choose a new interview time → interview_event, awaiting_candidate_reply=true
+- Interview rescheduled to a confirmed new time → interview_event, awaiting_candidate_reply=false
+- Interview cancelled with no replacement interview being scheduled → status_update rather than interview_event when appropriate.
+
+Focus primarily on the LATEST/newly written message content or snippet. Do not let older quoted thread history override the newest message.
+
+Do NOT classify these as interview_event:
+- generic job opportunities or recruiter outreach with no request for a call/interview
+- "Would you be interested in this opportunity?"
+- job recommendations
+- application acknowledgements
+- LinkedIn connection invitations
+- LinkedIn "People you may know"
+- LinkedIn InMail/messages merely containing words such as "invitation", "opportunity", or "connect"
+- webinars, networking events, career fairs, informational events, or non-hiring calendar invitations
+
+A recruiter message becomes interview_event only when there is a sufficiently clear hiring-process call/interview or scheduling intent.
 STATUS UPDATE
 kind = "status_update" with proposed_status rejected | offer | withdrawn | not_selected | interviewing
 Soft rejection (still rejected): "move forward with other candidates", "whose experience more closely aligns", "wish you success in your job search". Do NOT treat positive "move forward with you/your candidacy" as rejection.

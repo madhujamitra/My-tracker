@@ -54,13 +54,17 @@ create table if not exists public.applications (
       'offer',
       'rejected',
       'not_selected',
-      'withdrawn'
+      'withdrawn',
+      'not_a_job'
     )),
   applied_at date,
   last_activity_at timestamptz not null default now(),
   notes text,
   contact_linkedin text,
   contact_other text,
+  -- 'sync' = Gmail/auto may advance status; 'user' = manual edit wins on re-sync
+  status_source text not null default 'sync',
+  status_locked_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -76,8 +80,19 @@ alter table public.applications
     'offer',
     'rejected',
     'not_selected',
-    'withdrawn'
+    'withdrawn',
+    'not_a_job'
   ));
+
+-- Apply-once / user-lock columns (safe on existing DBs)
+alter table public.applications
+  add column if not exists status_source text not null default 'sync';
+alter table public.applications
+  add column if not exists status_locked_at timestamptz;
+alter table public.applications drop constraint if exists applications_status_source_check;
+alter table public.applications
+  add constraint applications_status_source_check
+  check (status_source in ('sync', 'user'));
 
 create index if not exists applications_user_id_idx on public.applications (user_id);
 create index if not exists applications_user_status_idx on public.applications (user_id, status);

@@ -27,6 +27,7 @@ export function findStaleApplicationIds(apps, staleDays, now = new Date()) {
     .filter(
       (a) =>
         ACTIVE_STATUSES.has(a.status) &&
+        a.status_source !== 'user' &&
         isStaleApplication(a.last_activity_at, staleDays, now),
     )
     .map((a) => a.id)

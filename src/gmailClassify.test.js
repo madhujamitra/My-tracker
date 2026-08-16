@@ -259,6 +259,48 @@ describe('gmailClassify', () => {
     assert.equal(r.proposed_company, 'DarioHealth')
   })
 
+  it('Cover Genius thread — latest mail (interview booked) → interviewing', () => {
+    // Always classify from the latest arriving/sent context, not older thread quotes.
+    const subject =
+      'Cover Genius: Senior Software Engineer (CG Admin) - Vancouver, BC'
+    const latestBooked = classifyJobEmail({
+      subject,
+      snippet:
+        'Hi Kenny, Thank you for the scheduling link. I have booked our call for Thursday, August 13, 2026, at 11:30 AM PST. I look forward to speaking with you then.',
+      from: 'Madhuja Mitra <madhujamitra3117@gmail.com>',
+    })
+    assert.equal(latestBooked.kind, 'interview_event')
+    assert.equal(latestBooked.proposed_status, 'interviewing')
+    assert.equal(latestBooked.proposed_company, 'Cover Genius')
+    assert.equal(latestBooked.awaiting_candidate_reply, false)
+  })
+
+  it('Cover Genius thread — Kenny asks to schedule call → interviewing + needs reply', () => {
+    const r = classifyJobEmail({
+      subject:
+        'Cover Genius: Senior Software Engineer (CG Admin) - Vancouver, BC',
+      snippet:
+        "Thank you for the intro Haira. It's great to connect with you Madhuja. I'd like to schedule a quick 20-minute call to walk you through the process ahead. I'll send a scheduling link from my system shortly. Please let me know if none of the available times work for you.",
+      from: 'Kenny Acosta <kenny.a@covergenius.com>',
+    })
+    assert.equal(r.kind, 'interview_event')
+    assert.equal(r.proposed_status, 'interviewing')
+    assert.equal(r.awaiting_candidate_reply, true)
+  })
+
+  it('Cover Genius thread — next stage intro → interviewing', () => {
+    const r = classifyJobEmail({
+      subject:
+        'Cover Genius: Senior Software Engineer (CG Admin) - Vancouver, BC',
+      snippet:
+        "I'm pleased to let you know that we'd like to move you forward to the next stage of our interview process, and I am delighted to introduce you to Kenny Acosta.",
+      from: 'Hairanica Gonzalez <hairanica.g@covergenius.com>',
+    })
+    assert.equal(r.kind, 'interview_event')
+    assert.equal(r.proposed_status, 'interviewing')
+    assert.equal(r.proposed_company, 'Cover Genius')
+  })
+
   it('matchApplication finds exact company', () => {
     const hit = matchApplication([{ id: 1, company: 'Vistera' }], 'Vistera')
     assert.equal(hit.id, 1)

@@ -16,6 +16,7 @@ const TERMINAL = new Set([
   'withdrawn',
   'on_hold',
   'not_selected',
+  'not_a_job',
 ])
 
 /** Phase A: collapse advanced stages to interviewing until schema ships them. */

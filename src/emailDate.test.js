@@ -48,4 +48,18 @@ describe('parseInviteStartsAt', () => {
     assert.equal(d.getHours(), 17)
     assert.equal(d.getMinutes(), 30)
   })
+
+  it('parses booked call from latest email body', () => {
+    const iso = parseInviteStartsAt({
+      subject: 'Cover Genius: Senior Software Engineer (CG Admin) - Vancouver, BC',
+      snippet:
+        'I have booked our call for Thursday, August 13, 2026, at 11:30 AM PST.',
+    })
+    const d = new Date(iso)
+    assert.equal(d.getFullYear(), 2026)
+    assert.equal(d.getMonth(), 7)
+    assert.equal(d.getDate(), 13)
+    assert.equal(d.getHours(), 11)
+    assert.equal(d.getMinutes(), 30)
+  })
 })

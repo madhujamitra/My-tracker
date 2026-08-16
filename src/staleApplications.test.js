@@ -23,6 +23,12 @@ describe('staleApplications', () => {
         { id: '2', status: 'offer', last_activity_at: '2026-07-01T00:00:00Z' },
         { id: '3', status: 'interviewing', last_activity_at: '2026-08-09T00:00:00Z' },
         { id: '4', status: 'opportunity', last_activity_at: '2026-07-01T00:00:00Z' },
+        {
+          id: '5',
+          status: 'applied',
+          status_source: 'user',
+          last_activity_at: '2026-07-01T00:00:00Z',
+        },
       ],
       20,
       now,
