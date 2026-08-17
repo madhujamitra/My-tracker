@@ -382,3 +382,116 @@ body {
   }
 }
 
+/* Study timer — fullscreen countdown */
+.study-timer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.study-timer.is-flash {
+  animation: study-flash 0.9s ease-out 2;
+}
+
+@keyframes study-flash {
+  0%,
+  100% {
+    background: #0f172a;
+  }
+  50% {
+    background: #1e3a5f;
+  }
+}
+
+.study-timer-inner {
+  width: 100%;
+  max-width: 900px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 16px;
+}
+
+.study-timer-label {
+  margin: 0;
+  font-size: clamp(0.85rem, 2vw, 1.1rem);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.study-timer-clock {
+  margin: 0;
+  font-size: clamp(4.5rem, 18vw, 9rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: #f8fafc;
+}
+
+.study-timer.is-ended .study-timer-clock {
+  color: #64748b;
+}
+
+.study-timer-ended {
+  margin: 0;
+  font-size: clamp(0.95rem, 2vw, 1.15rem);
+  color: #cbd5e1;
+  max-width: 28rem;
+}
+
+.study-timer-wake {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.study-timer-actions {
+  margin-top: 12px;
+}
+
+.study-timer-btn {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 28px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.study-timer-btn-primary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.study-timer-btn-primary:hover {
+  background: #f8fafc;
+}
+
+.study-timer-btn-primary:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 3px;
+}
+
+.study-timer-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .study-timer.is-flash {
+    animation: none;
+  }
+}
+

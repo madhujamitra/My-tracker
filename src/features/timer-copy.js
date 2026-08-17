@@ -1,3 +1,5 @@
+export const STUDY_DURATION_PRESETS = [25, 45, 60, 90]
+
 export const timerCopy = {
   start: 'Start timer',
   stop: 'Stop timer',
@@ -13,4 +15,22 @@ export const timerCopy = {
   empty: 'No items to time yet. Add a task or habit first.',
   running: 'Running',
   idle: 'Idle',
+
+  studyTitle: 'Study timer',
+  studySubtitle: 'Set a focus block. Your screen stays awake while it runs.',
+  studyStart: 'Start study timer',
+  studyDurationLabel: 'How long will you study?',
+  studyMinutes: (n) => `${n} min`,
+  studyCustomPlaceholder: 'Custom',
+  studyCustomAria: 'Custom minutes',
+  studyApplyCustom: 'Use',
+  studySessionLabel: 'Study time left',
+  studyEndedTitle: 'Time’s up',
+  studyEndedBody: 'Session complete. Take a short break when you’re ready.',
+  studyDone: 'Done',
+  studyEnd: 'End session',
+  studyEscHint: 'Press Esc to leave',
+  studyWakeOn: 'Screen will stay awake during this session',
+  studyWakeOff: 'This browser may still let the laptop sleep — keep the lid open if needed',
+  studyInvalidDuration: 'Enter a time between 1 and 240 minutes.',
 }
