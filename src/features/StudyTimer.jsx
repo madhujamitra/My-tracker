@@ -1,66 +1,23 @@
-import { useEffect, useId, useRef, useState } from 'react'
-import {
-  endAtFromNow,
-  formatStudyClock,
-  isCountdownDone,
-  remainingMs,
-} from './focus-countdown.js'
+import { useEffect, useId, useRef } from 'react'
 import { useWakeLock } from './useWakeLock.js'
 import { timerCopy } from './timer-copy.js'
 
 /**
- * Full-viewport study countdown. Tick lives in refs; display state updates for paint.
- * Holds Screen Wake Lock while the session is open.
+ * Full-viewport study countdown. Pause/resume is owned by useStudySession
+ * so closing this overlay does not restart the session.
  */
-export function StudyTimer({ durationMin, onClose }) {
+export function StudyTimer({
+  remainingLabel,
+  paused,
+  done,
+  onPause,
+  onResume,
+  onLeave,
+  onEnd,
+}) {
   const titleId = useId()
   const rootRef = useRef(null)
-  const endAtRef = useRef(endAtFromNow(durationMin))
-  const intervalRef = useRef(null)
-  const doneSignaledRef = useRef(false)
-
-  const [remainingLabel, setRemainingLabel] = useState(() =>
-    formatStudyClock(remainingMs(endAtRef.current)),
-  )
-  const [done, setDone] = useState(false)
-  const [flash, setFlash] = useState(false)
-
-  const { status: wakeStatus } = useWakeLock(true)
-
-  useEffect(() => {
-    endAtRef.current = endAtFromNow(durationMin)
-    doneSignaledRef.current = false
-    setDone(false)
-    setFlash(false)
-    setRemainingLabel(formatStudyClock(remainingMs(endAtRef.current)))
-
-    intervalRef.current = window.setInterval(() => {
-      const left = remainingMs(endAtRef.current)
-      setRemainingLabel(formatStudyClock(left))
-      if (isCountdownDone(endAtRef.current)) {
-        setDone(true)
-        if (intervalRef.current != null) {
-          window.clearInterval(intervalRef.current)
-          intervalRef.current = null
-        }
-      }
-    }, 250)
-
-    return () => {
-      if (intervalRef.current != null) {
-        window.clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
-    }
-  }, [durationMin])
-
-  useEffect(() => {
-    if (!done || doneSignaledRef.current) return
-    doneSignaledRef.current = true
-    setFlash(true)
-    const id = window.setTimeout(() => setFlash(false), 2000)
-    return () => window.clearTimeout(id)
-  }, [done])
+  const { status: wakeStatus } = useWakeLock(!paused && !done)
 
   useEffect(() => {
     const el = rootRef.current
@@ -89,12 +46,12 @@ export function StudyTimer({ durationMin, onClose }) {
     function onKeyDown(e) {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onClose()
+        onLeave()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  }, [onLeave])
 
   const wakeHint =
     wakeStatus === 'active'
@@ -103,24 +60,26 @@ export function StudyTimer({ durationMin, onClose }) {
         ? timerCopy.studyWakeOff
         : null
 
+  const label = done
+    ? timerCopy.studyEndedTitle
+    : paused
+      ? timerCopy.studyPausedLabel
+      : timerCopy.studySessionLabel
+
   return (
     <div
       ref={rootRef}
-      className={`study-timer${flash ? ' is-flash' : ''}${done ? ' is-ended' : ''}`}
+      className={`study-timer${done ? ' is-ended' : ''}${paused ? ' is-paused' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
     >
       <div className="study-timer-inner">
         <p id={titleId} className="study-timer-label">
-          {done ? timerCopy.studyEndedTitle : timerCopy.studySessionLabel}
+          {label}
         </p>
 
-        <p
-          className="study-timer-clock"
-          aria-live="polite"
-          aria-atomic="true"
-        >
+        <p className="study-timer-clock" aria-live="polite" aria-atomic="true">
           {remainingLabel}
         </p>
 
@@ -128,20 +87,38 @@ export function StudyTimer({ durationMin, onClose }) {
           <p className="study-timer-ended">{timerCopy.studyEndedBody}</p>
         ) : null}
 
-        {wakeHint ? (
+        {wakeHint && !paused ? (
           <p className="study-timer-wake" role="status">
             {wakeHint}
           </p>
         ) : null}
 
         <div className="study-timer-actions">
+          {!done ? (
+            <button
+              type="button"
+              className="study-timer-btn study-timer-btn-pause"
+              onClick={paused ? onResume : onPause}
+            >
+              {paused ? timerCopy.studyResume : timerCopy.studyPause}
+            </button>
+          ) : null}
           <button
             type="button"
             className="study-timer-btn study-timer-btn-primary"
-            onClick={onClose}
+            onClick={done ? onEnd : onLeave}
           >
-            {done ? timerCopy.studyDone : timerCopy.studyEnd}
+            {done ? timerCopy.studyDone : timerCopy.studyBack}
           </button>
+          {!done ? (
+            <button
+              type="button"
+              className="study-timer-btn study-timer-btn-pause"
+              onClick={onEnd}
+            >
+              {timerCopy.studyEnd}
+            </button>
+          ) : null}
         </div>
 
         <p className="study-timer-hint">{timerCopy.studyEscHint}</p>

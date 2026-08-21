@@ -23,4 +23,10 @@ assert.equal(formatHoursShort(1.234), '1.23')
   assert.ok(hrs >= 1.99 && hrs <= 2.02, `expected ~2h, got ${hrs}`)
 }
 
+{
+  const started = new Date(1_000_000).toISOString()
+  const hrs = liveHours({ hours: 0.5, timerStartedAt: started }, 0, 1_000_000 + 1_800_000)
+  assert.ok(hrs >= 0.99 && hrs <= 1.01, `expected ~1h, got ${hrs}`)
+}
+
 console.log('date.test.js: ok')

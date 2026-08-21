@@ -32,6 +32,7 @@ import {
   BriefcaseBusiness,
   MessageCircle,
   Clock3,
+  Clock,
   XCircle,
   Video,
   PartyPopper,
@@ -53,11 +54,16 @@ import {
   clearFocusCountdownSession,
   readFocusOnStart,
 } from './features/focus-prefs.js';
-import { localISODate } from './utils/date.js';
+import { localISODate, formatDuration, formatHoursShort } from './utils/date.js';
 import { useAuth } from './auth/AuthContext.jsx';
 import { isModuleEnabled, getWorkspace } from './lib/modules.js';
 import { getVisibleTabs } from './lib/dashboardTabs.js';
 import { countOpenNeedsReply, getJobDashboardStats } from './lib/gmail.js';
+import {
+  hoursByDayInMonth,
+  hoursByItemInMonth,
+  STUDY_TIMER_KEY,
+} from './lib/timerProductivity.js';
 
 const EMPTY_JOB_STATS = {
   appliedToday: 0,
@@ -95,6 +101,7 @@ function App({
   setTaskMetaMap,
   timerEntries = {},
   onTimerEntriesChange,
+  timersByDate = {},
 }) {
   const { user, signOut } = useAuth();
   const now = new Date();
@@ -479,6 +486,66 @@ function App({
       maxDailyDone,
     };
   }, [parsed, daysInSelectedMonth, currentMonth, taskMetaMap, selectedTargetDay]);
+
+  const productivityDays = useMemo(
+    () =>
+      hoursByDayInMonth(
+        timersByDate,
+        selectedYear,
+        selectedMonthIndex,
+        daysInSelectedMonth,
+      ),
+    // tick so today's running timer counts toward productivity
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [timersByDate, selectedYear, selectedMonthIndex, daysInSelectedMonth, timers.tick],
+  );
+
+  const monthTimedHours = useMemo(
+    () => productivityDays.reduce((sum, d) => sum + d.hours, 0),
+    [productivityDays],
+  );
+
+  const todayTimedHoursValue = useMemo(
+    () =>
+      Object.keys(timers.entries).reduce(
+        (sum, key) => sum + timers.getLiveHours(key),
+        0,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [timers.entries, timers.tick],
+  );
+
+  const itemTimedHours = useMemo(
+    () =>
+      hoursByItemInMonth(
+        timersByDate,
+        selectedYear,
+        selectedMonthIndex,
+        daysInSelectedMonth,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [timersByDate, selectedYear, selectedMonthIndex, daysInSelectedMonth, timers.tick],
+  );
+
+  const timedByItem = useMemo(() => {
+    const rows = parsed.taskRows
+      .map((item) => ({
+        key: String(item.index_),
+        name: String(item.row?.[0] || 'Untitled').trim() || 'Untitled',
+        hours: itemTimedHours[String(item.index_)] || 0,
+      }))
+      .filter((row) => row.hours > 0);
+    const studyHours = itemTimedHours[STUDY_TIMER_KEY] || 0;
+    if (studyHours > 0) {
+      rows.push({ key: STUDY_TIMER_KEY, name: 'Study timer', hours: studyHours });
+    }
+    return rows.sort((a, b) => b.hours - a.hours);
+  }, [parsed.taskRows, itemTimedHours]);
+
+  const maxDailyHours = useMemo(
+    () => Math.max(0.25, ...productivityDays.map((d) => d.hours), 0),
+    [productivityDays],
+  );
 
   // Task queue — todos carry misses; habits are daily-only (no carry)
   const queueTasks = useMemo(() => {
@@ -888,7 +955,7 @@ function App({
         </div>
 
         {/* METRIC KPI CARDS */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
           <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Completed</span>
@@ -953,6 +1020,24 @@ function App({
               <span className="text-xs text-slate-500 ml-1.5">problems</span>
             </div>
             <p className="mt-1 text-[11px] text-slate-500 font-medium">Logged across month</p>
+          </div>
+
+          <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Timed Hours</span>
+              <div className="p-1.5 bg-sky-50 text-sky-600 rounded-lg">
+                <Clock className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2">
+              <span className="text-2xl font-extrabold text-slate-900">
+                {formatHoursShort(monthTimedHours)}
+              </span>
+              <span className="text-xs text-slate-500 ml-1.5">h this month</span>
+            </div>
+            <div className="mt-1 text-[11px] text-sky-700 font-semibold flex items-center gap-1">
+              <Clock className="w-3 h-3" /> {formatDuration(todayTimedHoursValue)} today
+            </div>
           </div>
 
           <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm relative overflow-hidden">
@@ -1760,6 +1845,7 @@ function App({
 
         {/* TAB 3: ANALYTICS & VISUAL TRENDS */}
         {activeTab === 'analytics' && (
+          <div className="space-y-5">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {/* Daily Histogram Chart */}
             <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
@@ -1789,6 +1875,7 @@ function App({
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-12 z-20 bg-slate-900 text-white text-[10px] py-1 px-2 rounded shadow-lg whitespace-nowrap pointer-events-none">
                         <p className="font-bold">{item.label}</p>
                         <p>{item.doneCount} Completed</p>
+                        <p className="text-sky-300">{formatDuration(productivityDays[item.day - 1]?.hours || 0)} timed</p>
                         {item.leetcodeCount > 0 && <p className="text-amber-300">{item.leetcodeCount} LeetCode</p>}
                       </div>
 
@@ -1862,6 +1949,104 @@ function App({
               </div>
             </div>
           </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Daily Timed Hours</h3>
+                  <p className="text-[11px] text-slate-500">
+                    Productivity from the timer across {currentMonth.name} {selectedYear}
+                  </p>
+                </div>
+                <div className="bg-sky-50 border border-sky-100 rounded-xl px-3 py-1.5 text-right">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-sky-600">
+                    Month total
+                  </div>
+                  <div className="text-sm font-extrabold text-sky-900 tabular-nums">
+                    {formatDuration(monthTimedHours)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="h-56 flex items-end justify-between gap-1 pt-6 border-b border-slate-200">
+                {productivityDays.map((item) => {
+                  const heightPercent = Math.round((item.hours / maxDailyHours) * 100);
+                  const hasTime = item.hours > 0;
+
+                  return (
+                    <div
+                      key={item.day}
+                      className="flex-1 flex flex-col items-center group relative h-full justify-end cursor-pointer"
+                      onClick={() => setSelectedDayModal(item.day)}
+                    >
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-12 z-20 bg-slate-900 text-white text-[10px] py-1 px-2 rounded shadow-lg whitespace-nowrap pointer-events-none">
+                        <p className="font-bold">{currentMonth.name.slice(0, 3)} {item.day}</p>
+                        <p>{formatDuration(item.hours)} timed</p>
+                      </div>
+
+                      <div
+                        className={`w-full rounded-t-md transition-all duration-300 ${
+                          hasTime
+                            ? 'bg-sky-600 group-hover:bg-sky-500'
+                            : 'bg-slate-100 group-hover:bg-slate-200'
+                        }`}
+                        style={{ height: `${Math.max(6, heightPercent)}%` }}
+                      />
+
+                      <span className="text-[9px] text-slate-500 mt-2 font-medium">
+                        {item.day % 3 === 1 ? item.day : ''}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-between text-xs text-slate-500 font-medium">
+                <span>{currentMonth.name.slice(0, 3)} 1</span>
+                <span>{currentMonth.name.slice(0, 3)} {Math.floor(daysInSelectedMonth / 2)}</span>
+                <span>{currentMonth.name.slice(0, 3)} {daysInSelectedMonth}</span>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm space-y-3 flex flex-col">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Time by Item</h3>
+                <p className="text-[11px] text-slate-500">Hours logged on the timer this month</p>
+              </div>
+
+              <div className="space-y-2.5 my-2 overflow-y-auto max-h-[240px] pr-1">
+                {timedByItem.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">
+                    Start a timer on a task or habit to count productivity here.
+                  </p>
+                ) : (
+                  timedByItem.map((row) => {
+                    const pct = monthTimedHours > 0
+                      ? Math.round((row.hours / monthTimedHours) * 100)
+                      : 0;
+                    return (
+                      <div key={row.key} className="space-y-1">
+                        <div className="flex justify-between text-xs font-semibold gap-2">
+                          <span className="text-slate-800 truncate">{row.name}</span>
+                          <span className="text-sky-700 font-bold tabular-nums shrink-0">
+                            {formatDuration(row.hours)}
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                          <div
+                            className="bg-sky-600 h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+          </div>
         )}
 
         {/* DAY DETAIL MODAL */}
@@ -1884,6 +2069,15 @@ function App({
               </div>
 
               <div className="py-4 space-y-3">
+                <div className="p-2.5 bg-sky-50 rounded-xl border border-sky-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-sky-950">
+                    <Clock className="w-4 h-4 text-sky-700" /> Timed (productivity)
+                  </div>
+                  <span className="text-base font-extrabold text-sky-800 tabular-nums">
+                    {formatDuration(productivityDays[selectedDayModal - 1]?.hours || 0)}
+                  </span>
+                </div>
+
                 <div>
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
                     Completed Tasks ({stats.dailyBreakdown[selectedDayModal - 1]?.doneCount || 0})
@@ -2075,8 +2269,11 @@ function App({
           itemType={focusMeta?.itemType || 'todo'}
           workedHours={timers.getLiveHours(focusItem.index_)}
           onLeave={() => setFocusItemId(null)}
+          onToggle={() => timers.toggleTimer(focusItem.index_)}
           onStop={() => {
-            timers.toggleTimer(focusItem.index_);
+            if (timers.isRunning(focusItem.index_)) {
+              timers.toggleTimer(focusItem.index_);
+            }
             clearFocusCountdownSession();
             setFocusItemId(null);
           }}

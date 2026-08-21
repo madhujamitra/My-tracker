@@ -31,3 +31,13 @@ export function formatStudyClock(ms) {
 export function isCountdownDone(endAt, nowMs = Date.now()) {
   return remainingMs(endAt, nowMs) <= 0
 }
+
+/** Freeze a running countdown so pause/resume does not restart it. */
+export function freezeCountdown(endAt, nowMs = Date.now()) {
+  return remainingMs(endAt, nowMs)
+}
+
+/** Resume from frozen remaining milliseconds. */
+export function resumeCountdown(remaining, nowMs = Date.now()) {
+  return nowMs + Math.max(0, remaining)
+}

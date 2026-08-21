@@ -3,8 +3,10 @@ import { formatDuration } from '../utils/date.js'
 import {
   endAtFromNow,
   formatCountdown,
+  freezeCountdown,
   isCountdownDone,
   remainingMs,
+  resumeCountdown,
 } from './focus-countdown.js'
 import { focusCopy } from './focus-copy.js'
 import {
@@ -30,7 +32,7 @@ function initEndAt(taskId, durationMin) {
 
 /**
  * Focus Mode overlay — simplified from todo-app FocusMode
- * (session clocks + stop/leave; no checklist/notes for this slice).
+ * (session clocks + pause/resume/stop/leave; no checklist/notes for this slice).
  */
 export function FocusMode({
   taskId,
@@ -39,6 +41,7 @@ export function FocusMode({
   workedHours,
   onLeave,
   onStop,
+  onToggle,
 }) {
   const titleId = useId()
   const panelRef = useRef(null)
@@ -52,9 +55,11 @@ export function FocusMode({
   const [customMin, setCustomMin] = useState('')
   const [durationOpen, setDurationOpen] = useState(false)
   const [openOnStart, setOpenOnStart] = useState(readFocusOnStart)
-  const left = remainingMs(endAt)
+  const [paused, setPaused] = useState(false)
+  const [pausedLeft, setPausedLeft] = useState(0)
+  const left = paused ? pausedLeft : remainingMs(endAt)
   const countdownLabel = formatCountdown(left)
-  const done = isCountdownDone(endAt)
+  const done = paused ? pausedLeft <= 0 : isCountdownDone(endAt)
 
   useEffect(() => {
     const id = window.setInterval(() => setTick((t) => t + 1), 250)
@@ -63,8 +68,9 @@ export function FocusMode({
 
   useEffect(() => {
     void tick
+    if (paused) return
     writeFocusCountdownSession({ taskId: String(taskId), endAt })
-  }, [taskId, endAt, tick])
+  }, [taskId, endAt, tick, paused])
 
   useEffect(() => {
     if (!done || signaledRef.current) return
@@ -98,8 +104,28 @@ export function FocusMode({
     const next = endAtFromNow(minutes)
     setEndAt(next)
     writeFocusCountdownSession({ taskId: String(taskId), endAt: next })
+    if (paused) {
+      setPaused(false)
+      onToggle?.()
+    }
     setDurationOpen(false)
     setCustomMin('')
+  }
+
+  function handlePauseOrResume() {
+    if (!onToggle) return
+    if (paused) {
+      const next = resumeCountdown(pausedLeft)
+      setEndAt(next)
+      writeFocusCountdownSession({ taskId: String(taskId), endAt: next })
+      setPaused(false)
+      onToggle()
+      return
+    }
+    const leftNow = freezeCountdown(endAt)
+    setPausedLeft(leftNow)
+    setPaused(true)
+    onToggle()
   }
 
   function handleStop() {
@@ -109,7 +135,9 @@ export function FocusMode({
 
   return (
     <div
-      className={`focus-mode${flash ? ' is-flash' : ''}${done ? ' is-ended' : ''}`}
+      className={`focus-mode${flash ? ' is-flash' : ''}${done ? ' is-ended' : ''}${
+        paused ? ' is-paused' : ''
+      }`}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -225,6 +253,15 @@ export function FocusMode({
 
           <footer className="focus-mode-bottom">
             <div className="focus-mode-actions">
+              {onToggle ? (
+                <button
+                  type="button"
+                  className="focus-mode-btn focus-mode-btn-pause"
+                  onClick={() => void handlePauseOrResume()}
+                >
+                  {paused ? focusCopy.resume : focusCopy.pause}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="focus-mode-btn focus-mode-btn-stop"

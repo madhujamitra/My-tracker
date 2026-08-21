@@ -2,6 +2,8 @@ export const focusCopy = {
   dialogLabel: 'Focus mode',
   untilBreak: 'Until break',
   timeWorked: 'Time worked',
+  pause: 'Pause',
+  resume: 'Resume',
   stop: 'Stop',
   leave: 'Leave',
   stayOnList: 'Stay on list next time',
@@ -13,6 +15,6 @@ export const focusCopy = {
   applyCustom: 'Set',
   sessionEndedTitle: 'Break time',
   sessionEndedBody:
-    'Your focus block ended. Timer is still running until you stop it.',
+    'Your focus block ended. Pause or stop the timer when you’re done.',
   smileHint: 'Smile once. Soften the shoulders. Then keep going.',
 }

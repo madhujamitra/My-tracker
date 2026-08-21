@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { liveHours, localISODate } from '../utils/date.js'
 
 /**
- * Day timer store (todo-app start/stop model).
+ * Day timer store (pause/resume). Hours accumulate; play continues from the last total.
  * When `entries` + `onEntriesChange` are provided, parent owns persistence (Supabase).
  */
 export function useDayTimers(date = localISODate(), options = {}) {
@@ -79,6 +79,17 @@ export function useDayTimers(date = localISODate(), options = {}) {
     })
   }
 
+  function setEntry(key, next) {
+    const id = String(key)
+    commit({
+      ...entries,
+      [id]: {
+        hours: Math.max(0, next?.hours || 0),
+        timerStartedAt: next?.timerStartedAt || null,
+      },
+    })
+  }
+
   return {
     date,
     entries,
@@ -88,5 +99,6 @@ export function useDayTimers(date = localISODate(), options = {}) {
     isRunning,
     toggleTimer,
     setHours,
+    setEntry,
   }
 }

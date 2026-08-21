@@ -186,6 +186,7 @@ function WorkspaceHost() {
         taskMetaMap={meta}
         setTaskMetaMap={setMeta}
         timerEntries={todayTimers}
+        timersByDate={timersByDate}
         onTimerEntriesChange={setTodayTimers}
       />
     </>

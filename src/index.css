@@ -27,6 +27,11 @@ body {
   background: #ecfdf5;
 }
 
+.time-control.is-paused {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
 .time-control-toggle {
   display: inline-flex;
   align-items: center;
@@ -45,6 +50,11 @@ body {
   color: #059669;
 }
 
+.time-control.is-paused .time-control-toggle {
+  border-right-color: #fde68a;
+  color: #d97706;
+}
+
 .time-control-toggle:hover:not(:disabled) {
   background: rgba(15, 23, 42, 0.05);
   color: #0f172a;
@@ -53,6 +63,11 @@ body {
 .time-control.is-running .time-control-toggle:hover:not(:disabled) {
   background: rgba(16, 185, 129, 0.12);
   color: #047857;
+}
+
+.time-control.is-paused .time-control-toggle:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
 }
 
 .time-control-toggle:disabled {
@@ -90,6 +105,10 @@ body {
   color: #059669;
   min-width: 48px;
   text-align: right;
+}
+
+.time-control.is-paused .time-control-live {
+  color: #d97706;
 }
 
 .time-control-unit {
@@ -333,6 +352,16 @@ body {
   background: #1e293b;
 }
 
+.focus-mode-btn-pause {
+  background: #fff;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.focus-mode-btn-pause:hover {
+  background: #fffbeb;
+}
+
 .focus-mode-btn-leave {
   background: #fff;
   border-color: #e2e8f0;
@@ -458,6 +487,11 @@ body {
 
 .study-timer-actions {
   margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 
 .study-timer-btn {
@@ -481,6 +515,26 @@ body {
 .study-timer-btn-primary:focus-visible {
   outline: 2px solid #818cf8;
   outline-offset: 3px;
+}
+
+.study-timer-btn-pause {
+  background: transparent;
+  color: #f8fafc;
+  border: 1px solid #475569;
+}
+
+.study-timer-btn-pause:hover {
+  background: #1e293b;
+  border-color: #94a3b8;
+}
+
+.study-timer-btn-pause:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 3px;
+}
+
+.study-timer.is-paused .study-timer-clock {
+  color: #fde68a;
 }
 
 .study-timer-hint {

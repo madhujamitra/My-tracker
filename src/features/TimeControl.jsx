@@ -1,9 +1,10 @@
-import { Play, Square } from 'lucide-react'
+import { Pause, Play } from 'lucide-react'
 import { formatDuration } from '../utils/date.js'
 import { timerCopy } from './timer-copy.js'
 
 /**
- * Single pill: play/stop + live clock duration.
+ * Single pill: play/pause + live clock duration.
+ * Pause keeps logged hours; play resumes from the same total (never restarts).
  * Always shows m:ss / h:mm:ss (never rounds short sessions to "0 h").
  */
 export function TimeControl({
@@ -15,12 +16,19 @@ export function TimeControl({
   onToggleTimer,
 }) {
   const showToggle = !readOnly && onToggleTimer
+  const paused = !running && hours > 0
+  const toggleLabel = running
+    ? timerCopy.pause
+    : paused
+      ? timerCopy.resume
+      : timerCopy.start
 
   return (
     <div
       className={[
         'time-control',
         running ? 'is-running' : '',
+        paused ? 'is-paused' : '',
         compact ? 'is-compact' : '',
         readOnly ? 'is-readonly' : '',
       ]
@@ -32,12 +40,12 @@ export function TimeControl({
           type="button"
           className="time-control-toggle"
           disabled={busy}
-          aria-label={running ? timerCopy.stop : timerCopy.start}
-          title={running ? timerCopy.stop : timerCopy.start}
+          aria-label={toggleLabel}
+          title={toggleLabel}
           onClick={onToggleTimer}
         >
           {running ? (
-            <Square className="w-3 h-3 fill-current" aria-hidden />
+            <Pause className="w-3 h-3 fill-current" aria-hidden />
           ) : (
             <Play className="w-3 h-3 fill-current" aria-hidden />
           )}

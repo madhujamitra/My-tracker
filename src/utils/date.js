@@ -20,9 +20,11 @@ export function formatHoursShort(hours) {
 }
 
 /** Base hours + live elapsed while a timer is running (todo-app liveHours). */
-export function liveHours(entry, tick = 0) {
-  const base = entry?.hours ?? 0
+export function liveHours(entry, tick = 0, nowMs = Date.now()) {
+  const base = Number(entry?.hours) || 0
   if (!entry?.timerStartedAt) return base
   void tick
-  return base + (Date.now() - new Date(entry.timerStartedAt).getTime()) / 3_600_000
+  const started = new Date(entry.timerStartedAt).getTime()
+  if (!Number.isFinite(started)) return base
+  return base + Math.max(0, nowMs - started) / 3_600_000
 }
