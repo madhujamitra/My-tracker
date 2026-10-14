@@ -2,6 +2,7 @@
 
 Personal **task & habit workspace** built with Vite, React, and Tailwind. Track daily habits, rolling to-dos, timers, and focus sessions. Auth is powered by **Supabase** (email + password).
 
+
 ## Features
 
 | Area | Behavior |
